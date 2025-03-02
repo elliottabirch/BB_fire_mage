@@ -1,652 +1,809 @@
--- Note:
--- Keep in mind this is an example the core already has fire mage loaded by default
--- So in order to try this code properly you should disable default mage fire plugin
+-- Fire Mage Script - Enhanced with Comprehensive Pattern-Based Logic
+-- Focuses on optimal Fire Blast usage and pattern-based spell casting during Combustion
 
--- Note:
--- This is an intentionally simplified code example.
--- All logic shown here is for demonstration purposes only and may not cover all scenarios.
--- Use these examples as a starting point and adapt as needed for real implementations.
-
--- Use this file as a general example to build your own code.
--- in this file, the following example functionalities are provided:
-
--- 1 -> create basic menu elements for the script and interact with them
--- 2 -> import the necessary Lua modules provided by the core developers
--- 3 -> cast a fireball to the target selector main target, if we are in a single-target situation, flamestrike if we are in an aoe situation.
-
--- first, let's include all required modules:
-
+-----------------------------------
+-- MODULE IMPORTS
+-----------------------------------
 ---@type enums
 local enums = require("common/enums")
-
 ---@type pvp_helper
-local pvp_utiltiy = require("common/utility/pvp_helper")
-
+local pvp_helper = require("common/utility/pvp_helper")
 ---@type spell_queue
 local spell_queue = require("common/modules/spell_queue")
-
 ---@type unit_helper
 local unit_helper = require("common/utility/unit_helper")
-
 ---@type spell_helper
 local spell_helper = require("common/utility/spell_helper")
-
 ---@type buff_manager
 local buff_manager = require("common/modules/buff_manager")
-
 ---@type plugin_helper
 local plugin_helper = require("common/utility/plugin_helper")
-
----@type spell_prediction
-local spell_prediction = require("common/modules/spell_prediction")
-
+---@type target_selector
+local target_selector = require("common/modules/target_selector")
+---@type key_helper
+local key_helper = require("common/utility/key_helper")
 ---@type control_panel_helper
 local control_panel_helper = require("common/utility/control_panel_helper")
 
--- then, let's define some menu elements:
-local menu_elements =
-{
+-----------------------------------
+-- SPELL DATA DEFINITIONS
+-----------------------------------
+local SPELL = {
+    FIREBALL = {
+        id = 133,
+        name = "Fireball",
+        priority = 1,
+        last_cast = 0,
+        cast_delay = 0.20,
+        is_off_gcd = false
+    },
+    FIRE_BLAST = {
+        id = 108853,
+        name = "Fire Blast",
+        priority = 2,
+        last_cast = 0,
+        cast_delay = 0.10,
+        is_off_gcd = true
+    },
+    PYROBLAST = {
+        id = 11366,
+        name = "Pyroblast",
+        priority = 1,
+        last_cast = 0,
+        cast_delay = 0.20,
+        is_off_gcd = false
+    },
+    PHOENIX_FLAMES = {
+        id = 257541,
+        name = "Phoenix Flames",
+        priority = 2,
+        last_cast = 0,
+        cast_delay = 0.20,
+        is_off_gcd = false
+    },
+    SCORCH = {
+        id = 2948,
+        name = "Scorch",
+        priority = 2,
+        last_cast = 0,
+        cast_delay = 0.20,
+        is_off_gcd = false
+    },
+    COMBUSTION = {
+        id = 190319,
+        name = "Combustion",
+        priority = 2,
+        last_cast = 0,
+        cast_delay = 0.10,
+        is_off_gcd = true
+    }
+}
+
+-----------------------------------
+-- BUFF DATA DEFINITIONS
+-----------------------------------
+local BUFF = {
+    HOT_STREAK = enums.buff_db.HOT_STREAK,
+    HEATING_UP = enums.buff_db.HEATING_UP,
+    COMBUSTION = enums.buff_db.COMBUSTION
+}
+
+-----------------------------------
+-- UI ELEMENTS
+-----------------------------------
+local menu_elements = {
     main_tree = core.menu.tree_node(),
     keybinds_tree_node = core.menu.tree_node(),
     enable_script_check = core.menu.checkbox(false, "enable_script_check"),
-    cast_flamestrike_only_when_instant = core.menu.checkbox(false, "cast_flamestrike_only_when_instant"),
-
-    -- 7 "Undefined"
-    -- 999 "Unbinded" but functional on control panel (so newcomer can see it and click)
     enable_toggle = core.menu.keybind(999, false, "toggle_script_check"),
-
     draw_plugin_state = core.menu.checkbox(true, "draw_plugin_state"),
-    ts_custom_logic_override = core.menu.checkbox(true, "override_ts_logic")
+    ts_custom_logic_override = core.menu.checkbox(true, "override_ts_logic"),
+    debug_info = core.menu.checkbox(true, "debug_info"),
+    log_level = core.menu.slider_int(1, 3, 2, "log_level") -- 1=minimal, 2=normal, 3=verbose
 }
 
--- and now render them:
-local function my_menu_render()
-    -- this is the node that will appear in the main memu, under the name "Placeholder Script Menu"
-    menu_elements.main_tree:render("Fire Mage Example", function()
-        -- this is the checkbohx that will appear upon opening the previous tree node
-        menu_elements.enable_script_check:render("Enable Script")
+-----------------------------------
+-- LOGGING SYSTEM
+-----------------------------------
+local logger = {
+    logs = {},
+    max_logs = 10,
+    level = 2 -- Default: normal logging
+}
 
-        --  if the script is not enabled, then we can stop rendering the following menu elements
-        if not menu_elements.enable_script_check:get_state() then
-            return false
+function logger.log(message, level)
+    level = level or 2 -- Default level: normal
+
+    if level <= logger.level then
+        table.insert(logger.logs, 1, message)
+        if #logger.logs > logger.max_logs then
+            table.remove(logger.logs, logger.max_logs + 1)
         end
+        core.log(message)
+    end
 
-        menu_elements.keybinds_tree_node:render("Keybinds", function()
-            menu_elements.enable_toggle:render("Enable Script Toggle")
-        end)
-
-        menu_elements.ts_custom_logic_override:render("Enable TS Custom Settings Override")
-        menu_elements.cast_flamestrike_only_when_instant:render("Only Allow Flamestrike Cast When Empowered")
-        menu_elements.draw_plugin_state:render("Draw Plugin State")
-    end)
+    return message
 end
 
--- lets craft a function to cast a fireball
+function logger.update_level()
+    logger.level = menu_elements.log_level:get()
+end
 
--- first, define the spell datas
-local fireball_spell_data =
-{
-    id = 133,
-    name = "Fireball",
-
-    -- add the extra information that you might find useful here (...)
+-----------------------------------
+-- SPELL CASTING SYSTEM
+-----------------------------------
+local spellcasting = {
+    last_cast = nil,
+    last_cast_time = 0
 }
 
-local flamestrike_spell_data =
-{
-    id = 2120,
-    name = "Flamestrike",
+function spellcasting.cast_spell(spell, target, skip_facing, skip_range)
+    local current_time = core.time()
 
-    -- add the extra information that you might find useful here (...)
-}
-
-local fireblast_spell_data =
-{
-    id = 108853,
-    name = "Fireblast",
-
-    -- add the extra information that you might find useful here (...)
-}
-
-local pyro_spell_data =
-{
-    id = 11366,
-    name = "Pyroblast",
-
-    -- add the extra information that you might find useful here (...)
-}
-
-local phoenix_flames_spell_data =
-{
-    id = 257541,
-    name = "Phoenix Flames",
-
-    -- add the extra information that you might find useful here (...)
-}
-
-local scorch_spell_data =
-{
-    id = 2948,
-    name = "Scorch",
-
-
-    -- add the extra information that you might find useful here (...)
-}
-
-local combust_spell_data =
-{
-    id = 190319,
-    name = "Combustion",
-
-    -- add the extra information that you might find useful here (...)
-}
-
-local last_fireball_cast_time = 0.0
-
----@param local_player game_object
----@param target game_object
----@return boolean
-local function cast_fireball(local_player, target)
-    local time = core.time()
-    -- add this check to avoid multiple calls to the same function
-    if time - last_fireball_cast_time < 0.20 then
+    -- Check rate limiting to prevent spam
+    if current_time - spell.last_cast < spell.cast_delay then
+        logger.log("Cast rejected: " .. spell.name .. " (Rate limited)", 3)
         return false
     end
 
-    -- check if the spell is ready and we can cast it to the current target
-    local is_spell_ready_to_be_casted = spell_helper:is_spell_castable(fireball_spell_data.id, local_player, target,
-        false, false)
-    if not is_spell_ready_to_be_casted then
+    -- Check if spell is castable
+    local is_spell_castable = spell_helper:is_spell_castable(spell.id, core.object_manager.get_local_player(),
+        target, skip_facing, skip_range)
+    if not is_spell_castable then
+        logger.log("Cast rejected: " .. spell.name .. " (Not castable)", 2)
         return false
     end
 
-    -- dont cast if we are moving!
-    if local_player:is_moving() then
-        return false
+    -- Queue the spell based on whether it's off the GCD or not
+    if spell.is_off_gcd then
+        spell_queue:queue_spell_target_fast(spell.id, target, spell.priority,
+            "Casting " .. spell.name)
+    else
+        spell_queue:queue_spell_target(spell.id, target, spell.priority,
+            "Casting " .. spell.name)
     end
 
-    spell_queue:queue_spell_target(fireball_spell_data.id, target, 1, "Casting Fireball To " .. target:get_name())
-    last_fireball_cast_time = time
-
+    spell.last_cast = current_time
+    spellcasting.last_cast = spell.name
+    spellcasting.last_cast_time = current_time
+    logger.log("CAST SUCCESS: " .. spell.name, 1)
     return true
 end
 
-local last_pyro_cast_time = 0.0
-local function cast_pyro(local_player, target)
-    local time = core.time()
-    -- add this check to avoid multiple calls to the same function
-    if time - last_pyro_cast_time < 0.20 then
-        return false
-    end
+-----------------------------------
+-- RESOURCE TRACKING
+-----------------------------------
+local resources = {}
 
-
-
-    -- check if the spell is ready and we can cast it to the current target
-    local is_spell_ready_to_be_casted = spell_helper:is_spell_castable(pyro_spell_data.id, local_player, target,
-        false, false) or spell_helper:is_spell_queueable(pyro_spell_data.id, local_player, target,
-        false, false)
-    if not is_spell_ready_to_be_casted then
-        return false
-    end
-
-    spell_queue:queue_spell_target(pyro_spell_data.id, target, 1, "Casting Pyroblast To " .. target:get_name())
-    last_pyro_cast_time = time
-
-    return true
+function resources.get_fire_blast_charges()
+    return core.spell_book.get_spell_charge(SPELL.FIRE_BLAST.id)
 end
 
-local last_fireblast_cast_time = 0.0
+function resources.fire_blast_ready_in(seconds)
+    local charge_cd = core.spell_book.get_spell_charge_cooldown_duration(SPELL.FIRE_BLAST.id)
+    local start_time = core.spell_book.get_spell_charge_cooldown_start_time(SPELL.FIRE_BLAST.id)
 
----@param local_player game_object
----@param target game_object
----@return boolean
-local function cast_fireblast(local_player, target)
-    local time = core.time()
-    -- add this check to avoid multiple calls to the same function
-    if time - last_fireblast_cast_time < 0.10 then
-        return false
+    if start_time == 0 or resources.get_fire_blast_charges() > 0 then
+        return 0
     end
 
-    local hot_streak_data = buff_manager:get_buff_data(local_player, enums.buff_db.HOT_STREAK)
-
-    if hot_streak_data.is_active then
-        return false
-    end
-    -- check if the spell is ready and we can cast it to the current target
-    local is_spell_ready_to_be_casted = spell_helper:is_spell_castable(fireblast_spell_data.id, local_player, target,
-        false, false)
-    if not is_spell_ready_to_be_casted then
-        return false
-    end
-
-    spell_queue:queue_spell_target_fast(fireblast_spell_data.id, target, 2, "Casting Fireblast To " .. target:get_name())
-    last_fireblast_cast_time = time
-
-    return true
+    local remaining = math.max(0, (start_time + charge_cd - core.game_time()) / 1000)
+    return remaining <= seconds and remaining or 999
 end
 
-local last_combust_cast_time = 0.0
-
----@param local_player game_object
----@param target game_object
----@return boolean
-local function cast_combust(local_player, target)
-    local time = core.time()
-    -- add this check to avoid multiple calls to the same function
-    if time - last_combust_cast_time < 0.10 then
-        return false
-    end
-
-    -- check if the spell is ready and we can cast it to the current target
-    local is_spell_ready_to_be_casted = spell_helper:is_spell_castable(combust_spell_data.id, local_player, target,
-        false, false)
-    if not is_spell_ready_to_be_casted then
-        return false
-    end
-
-    spell_queue:queue_spell_target_fast(combust_spell_data.id, target, 2, "Casting combust To " .. target:get_name())
-    last_combust_cast_time = time
-
-    return true
+function resources.has_hot_streak(player)
+    local hot_streak_data = buff_manager:get_buff_data(player, BUFF.HOT_STREAK)
+    return hot_streak_data.is_active
 end
 
-local last_scorch_cast_time = 0.0
-
----@param local_player game_object
----@param target game_object
----@return boolean
-local function cast_scorch(local_player, target)
-    local time = core.time()
-    -- add this check to avoid multiple calls to the same function
-    if time - last_scorch_cast_time < 0.20 then
-        return false
-    end
-    -- check if the spell is ready and we can cast it to the current target
-    local is_spell_ready_to_be_casted = spell_helper:is_spell_castable(scorch_spell_data.id, local_player, target,
-        false, false)
-    if not is_spell_ready_to_be_casted then
-        return false
-    end
-
-    spell_queue:queue_spell_target(scorch_spell_data.id, target, 2, "Casting scorch To " .. target:get_name())
-    last_scorch_cast_time = time
-
-    return true
+function resources.has_heating_up(player)
+    local heating_up_data = buff_manager:get_buff_data(player, BUFF.HEATING_UP)
+    return heating_up_data.is_active
 end
 
-local last_PF_cast_time = 0.0
-
----@param local_player game_object
----@param target game_object
----@return boolean
-local function cast_PF(local_player, target)
-    local time = core.time()
-    -- add this check to avoid multiple calls to the same function
-    if time - last_PF_cast_time < 0.2 then
-        return false
-    end
-
-    -- check if the spell is ready and we can cast it to the current target
-    local is_spell_ready_to_be_casted = spell_helper:is_spell_castable(phoenix_flames_spell_data.id, local_player,
-        target,
-        false, false)
-    if not is_spell_ready_to_be_casted then
-        return false
-    end
-
-    spell_queue:queue_spell_target(phoenix_flames_spell_data.id, target, 2,
-        "Casting PF To " .. target:get_name())
-    last_PF_cast_time = time
-
-    return true
+function resources.has_hyperthermia(player)
+    local heating_up_data = buff_manager:get_buff_data(player, BUFF.HEATING_UP)
+    return heating_up_data.is_active
 end
 
----@param local_player game_object
----@return boolean
-local function is_flamestrike_instant(local_player)
-    -- if you don't find the buff that you are looking for in the buff_db enum, you can send custom table.
+function resources.get_phoenix_flames_charges()
+    return core.spell_book.get_spell_charge(SPELL.PHOENIX_FLAMES.id)
+end
 
-    -- how to send custom table:
-    -- local hot_streak = {333}
-    -- in this example hot_streak is the same as enums.buff_db.HOT_STREAK
-    -- feel free to report us any missing buff / debuff on enums.buff_db and we will add it for you <3
+function resources.phoenix_flames_ready_in(seconds)
+    local charge_cd = core.spell_book.get_spell_charge_cooldown_duration(SPELL.PHOENIX_FLAMES.id)
+    local start_time = core.spell_book.get_spell_charge_cooldown_start_time(SPELL.PHOENIX_FLAMES.id)
 
-    -- note: why is it a table and not a number alone? because maybe one buff / debuff has multiple ids
+    if start_time == 0 or resources.get_phoenix_flames_charges() > 0 then
+        return 0
+    end
 
-    -- store the information of the buff cache
-    local hot_streak_data = buff_manager:get_buff_data(local_player, enums.buff_db.HOT_STREAK)
+    local remaining = math.max(0, (start_time + charge_cd - core.game_time()) / 1000)
+    return remaining <= seconds and remaining or 999
+end
 
-    -- use the boolean inside "is_active", you also have .remaining returning in milliseconds format and .stacks
-    if hot_streak_data.is_active then
+function resources.get_combustion_remaining(player)
+    local combustion_data = buff_manager:get_buff_data(player, BUFF.COMBUSTION)
+    return combustion_data.is_active and combustion_data.remaining or 0
+end
+
+function resources.fire_blast_will_be_ready(duration)
+    if resources.get_fire_blast_charges() > 0 then
         return true
     end
 
-    -- we check one buff first, this way in case this buff is true, we no longer need to pay resources to check the 2nd one.
+    local charge_cd = core.spell_book.get_spell_charge_cooldown_duration(SPELL.FIRE_BLAST.id)
+    local start_time = core.spell_book.get_spell_charge_cooldown_start_time(SPELL.FIRE_BLAST.id)
 
-    local hyperthermia_data = buff_manager:get_buff_data(local_player, enums.buff_db.HYPERTHERMIA)
-    if hyperthermia_data.is_active then
+    if start_time == 0 then
+        return false
+    end
+
+    local time_until_charge = (start_time + charge_cd - core.game_time()) / 1000
+    return time_until_charge < duration
+end
+
+-----------------------------------
+-- PYROBLAST-FIREBLAST PATTERN
+-----------------------------------
+local pyro_fb_pattern = {
+    active = false,
+    state = "NONE", -- NONE, WAITING_FOR_GCD, FIRE_BLAST_CAST, PYROBLAST_CAST
+    start_time = 0
+}
+
+function pyro_fb_pattern.should_start(player)
+    logger.log("Evaluating Pyro->FB pattern conditions:", 3)
+
+    -- Check if we just cast Pyroblast
+    if spellcasting.last_cast ~= SPELL.PYROBLAST.name then
+        logger.log(
+        "Pyro->FB pattern REJECTED: Last cast was not Pyroblast (was " .. (spellcasting.last_cast or "nil") .. ")", 2)
+        return false
+    end
+    logger.log("Pyro->FB pattern check: Last cast WAS Pyroblast ✓", 3)
+
+    -- Check if GCD is active
+    local gcd = core.spell_book.get_global_cooldown()
+    if gcd <= 0 then
+        logger.log("Pyro->FB pattern REJECTED: Global cooldown not active (GCD: " .. gcd .. ")", 2)
+        return false
+    end
+    logger.log("Pyro->FB pattern check: GCD is active (" .. string.format("%.2f", gcd) .. "s) ✓", 3)
+
+    -- Check if we have Fire Blast charge or will have one soon
+    if resources.get_fire_blast_charges() > 0 then
+        logger.log("Pyro->FB pattern ACCEPTED: Have Fire Blast charges (" .. resources.get_fire_blast_charges() .. ")", 2)
         return true
     end
 
+    -- Check if a charge will be ready by end of GCD
+    local fb_ready_time = resources.fire_blast_ready_in(gcd - 0.2)
+    if fb_ready_time < gcd then
+        logger.log(
+        "Pyro->FB pattern ACCEPTED: Fire Blast will be ready in " ..
+        string.format("%.2f", fb_ready_time) .. "s (before GCD ends)", 2)
+        return true
+    end
+
+    logger.log("Pyro->FB pattern REJECTED: No Fire Blast charges and none will be ready soon", 2)
     return false
 end
 
-local last_flamestrike_cast_time = 0.0
-
----@param local_player game_object
----@param target game_object
----@return boolean
-local function cast_flamestrike(local_player, target)
-    local time = core.time()
-    -- add this check to avoid multiple calls to the same function
-    if time - last_flamestrike_cast_time < 0.20 then
-        return false
-    end
-
-    local is_instant = is_flamestrike_instant(local_player)
-    local is_only_casting_if_instant = menu_elements.cast_flamestrike_only_when_instant:get_state()
-    if is_only_casting_if_instant then
-        if not is_instant then
-            return false
-        end
-    end
-
-    -- dont cast if we are moving!
-    if not is_flamestrike_instant then
-        if local_player:is_moving() then
-            return false
-        end
-    end
-
-    -- check if the spell is ready and we can cast it to the current target
-    local is_spell_ready_to_be_casted = spell_helper:is_spell_castable(flamestrike_spell_data.id, local_player, target,
-        false, false)
-    if not is_spell_ready_to_be_casted then
-        return false
-    end
-
-    local flamestrike_radius = 8.0
-    local flamestrike_radius_safe = flamestrike_radius * 0.90
-
-    local flamestrike_range = 40
-    local flamestrike_range_safe = flamestrike_range * 0.95
-
-    local flamestrike_cast_time = 2.5
-    local flamestrike_cast_time_safe = flamestrike_cast_time + 0.1
-
-    local player_position = local_player:get_position()
-
-    local prediction_spell_data = spell_prediction:new_spell_data(
-        flamestrike_spell_data.id,                  -- spell_id
-        flamestrike_range_safe,                     -- range
-        flamestrike_radius_safe,                    -- radius
-        flamestrike_cast_time_safe,                 -- cast_time
-        0.0,                                        -- projectile_speed
-        spell_prediction.prediction_type.MOST_HITS, -- prediction_type
-        spell_prediction.geometry_type.CIRCLE,      -- geometry_type
-        player_position                             -- source_position
-    )
-
-    local prediction_result = spell_prediction:get_cast_position(target, prediction_spell_data)
-    if prediction_result.amount_of_hits <= 0 then
-        return false
-    end
-
-    local cast_position = prediction_result.cast_position
-    local cast_distance = cast_position:squared_dist_to(player_position)
-    if cast_distance >= flamestrike_range then
-        return false
-    end
-
-    spell_queue:queue_spell_position(flamestrike_spell_data.id, cast_position, 1,
-        "Casting Flamestrike To " .. target:get_name())
-    last_flamestrike_cast_time = time
-    return true
+function pyro_fb_pattern.start()
+    pyro_fb_pattern.active = true
+    pyro_fb_pattern.state = "WAITING_FOR_GCD"
+    pyro_fb_pattern.start_time = core.time()
+    logger.log("Pyro->FB pattern STARTED - State: WAITING_FOR_GCD", 1)
 end
 
--- Note:
--- This is an intentionally simplified code example.
--- All logic shown here is for demonstration purposes only and may not cover all scenarios.
--- Use these examples as a starting point and adapt as needed for real implementations.
-
----@param target game_object
----@return boolean
-local function is_aoe(target)
-    -- in range add the spell radius, in this case it's aprox 15 I suppose (didn't test)
-    local units_around_target = unit_helper:get_enemy_list_around(target:get_position(), 15.0)
-    return #units_around_target > 1
+function pyro_fb_pattern.reset()
+    local prev_state = pyro_fb_pattern.state
+    pyro_fb_pattern.active = false
+    pyro_fb_pattern.state = "NONE"
+    pyro_fb_pattern.start_time = 0
+    logger.log("Pyro->FB pattern RESET (from " .. prev_state .. " state)", 1)
 end
 
----@param local_player game_object
----@param target game_object
----@local
----@function
----@
-local function complete_cast_logic(local_player, target)
-    -- flamestrike has priority over fireball.
-    if is_aoe(target) then
-        if cast_flamestrike(local_player, target) then
+function pyro_fb_pattern.execute(player, target)
+    if not pyro_fb_pattern.active then
+        return false
+    end
+
+    -- Check for GCD
+    local gcd = core.spell_book.get_global_cooldown()
+    logger.log(
+    "Pyro->FB pattern executing - Current state: " ..
+    pyro_fb_pattern.state .. ", GCD: " .. string.format("%.2f", gcd) .. "s", 3)
+
+    -- State: WAITING_FOR_GCD
+    if pyro_fb_pattern.state == "WAITING_FOR_GCD" then
+        -- Wait until GCD is almost over
+        local fb_charges = resources.get_fire_blast_charges()
+        if gcd <= 0.1 and fb_charges > 0 then
+            logger.log("Pyro->FB pattern - GCD ending, preparing Fire Blast (Fire Blast charges: " .. fb_charges .. ")",
+                2)
+            pyro_fb_pattern.state = "FIRE_BLAST_CAST"
+        elseif gcd <= 0 then
+            logger.log("Pyro->FB pattern - GCD EXPIRED but no Fire Blast charges, aborting pattern", 2)
+            pyro_fb_pattern.reset()
+            return false
+        else
+            logger.log(
+            "Pyro->FB pattern - Waiting for GCD (" ..
+            string.format("%.2f", gcd) .. "s remaining, FB charges: " .. fb_charges .. ")", 3)
+        end
+        return true
+
+        -- State: FIRE_BLAST_CAST
+    elseif pyro_fb_pattern.state == "FIRE_BLAST_CAST" then
+        -- Cast Fire Blast
+        logger.log("Pyro->FB pattern - Attempting to cast Fire Blast", 2)
+        if spellcasting.cast_spell(SPELL.FIRE_BLAST, target, false, false) then
+            pyro_fb_pattern.state = "PYROBLAST_CAST"
+            logger.log("Pyro->FB pattern - Fire Blast cast successful, transitioning to PYROBLAST_CAST state", 2)
+            return true
+        else
+            logger.log("Pyro->FB pattern - Fire Blast cast FAILED, retrying", 2)
+            return true
+        end
+
+        -- State: PYROBLAST_CAST
+    elseif pyro_fb_pattern.state == "PYROBLAST_CAST" then
+        -- Cast Pyroblast if Hot Streak is active
+        local has_hot_streak = resources.has_hot_streak(player)
+        logger.log(
+        "Pyro->FB pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " .. tostring(has_hot_streak) .. ")", 3)
+
+        if has_hot_streak then
+            logger.log("Pyro->FB pattern - Attempting to cast Pyroblast with Hot Streak", 2)
+            if spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false) then
+                logger.log("Pyro->FB pattern COMPLETED: Full sequence executed successfully", 1)
+                pyro_fb_pattern.reset()
+                return true
+            else
+                logger.log("Pyro->FB pattern - Pyroblast cast FAILED, retrying", 2)
+                return true
+            end
+        elseif gcd <= 0 then
+            -- We should have Hot Streak by now, if not something went wrong
+            logger.log("Pyro->FB pattern ABANDONED: No Hot Streak for Pyroblast (GCD ended)", 1)
+            pyro_fb_pattern.reset()
+            return false
+        else
+            logger.log(
+            "Pyro->FB pattern - Waiting for Hot Streak proc or GCD (Current GCD: " .. string.format("%.2f", gcd) .. "s)",
+                3)
             return true
         end
     end
-    local hyperthermia_data = buff_manager:get_buff_data(local_player, enums.buff_db.HYPERTHERMIA)
-    local hot_streak_data = buff_manager:get_buff_data(local_player, enums.buff_db.HOT_STREAK)
-    local heating_up_data = buff_manager:get_buff_data(local_player, enums.buff_db.HEATING_UP)
 
-    if hyperthermia_data.is_active and cast_pyro(local_player, target) then
-        return true
-    end
-
-    if hot_streak_data.is_active and cast_pyro(local_player, target) then
-        return true
-    end
-
-    if local_player:get_active_spell_id() == fireball_spell_data.id and (local_player:get_active_spell_cast_end_time() - core.game_time() * 1000) < 500 and cast_combust(local_player, target) then
-        return true
-    end
-
-    if local_player:get_active_spell_id() == fireball_spell_data.id and (local_player:get_active_spell_cast_end_time() - core.game_time() * 1000) < 500 and heating_up_data.is_active and cast_fireblast(local_player, target) then
-        return true
-    end
-
-    -- if cast_pyro(local_player, target) then
-    --     return true
-    -- end
-
-    -- if cast_PF(local_player, target) then
-    --     return true
-    -- end
-
-    -- if flamestrike wasn't casted, it means that either the target was alone (no aoe situation) or
-    -- it means that flamestrike wasn't instant and the user set the "cast_flamestrike_only_when_instant" option
-    -- to true
-    return cast_fireball(local_player, target)
+    return true
 end
 
----@type target_selector
-local target_selector = require("common/modules/target_selector")
+-----------------------------------
+-- PHOENIX FLAMES PATTERN
+-----------------------------------
+local pyro_pf_pattern = {
+    active = false,
+    state = "NONE", -- NONE, WAITING_FOR_GCD, PF_CAST, PYROBLAST_CAST
+    start_time = 0
+}
 
--- this function is a simple one, not necessarily the best one for mage fires. This is just an example.
+function pyro_pf_pattern.should_start(player)
+    logger.log("Evaluating Pyro->PF pattern conditions:", 3)
+
+    -- If the Fire Blast pattern is active, don't start this one
+    if pyro_fb_pattern.active then
+        logger.log("Pyro->PF pattern REJECTED: Fire Blast pattern already active", 2)
+        return false
+    end
+    logger.log("Pyro->PF pattern check: No Fire Blast pattern active ✓", 3)
+
+    -- Check if we just cast Pyroblast
+    if spellcasting.last_cast ~= SPELL.PYROBLAST.name then
+        logger.log(
+        "Pyro->PF pattern REJECTED: Last cast was not Pyroblast (was " .. (spellcasting.last_cast or "nil") .. ")", 2)
+        return false
+    end
+    logger.log("Pyro->PF pattern check: Last cast WAS Pyroblast ✓", 3)
+
+    -- Check if GCD is active
+    local gcd = core.spell_book.get_global_cooldown()
+    if gcd <= 0 then
+        logger.log("Pyro->PF pattern REJECTED: Global cooldown not active (GCD: " .. gcd .. ")", 2)
+        return false
+    end
+    logger.log("Pyro->PF pattern check: GCD is active (" .. string.format("%.2f", gcd) .. "s) ✓", 3)
+
+    -- Check if we have Phoenix Flames charge
+    local pf_charges = resources.get_phoenix_flames_charges()
+    if pf_charges > 0 then
+        logger.log("Pyro->PF pattern ACCEPTED: Have Phoenix Flames charges (" .. pf_charges .. ")", 2)
+        return true
+    end
+
+    -- Check if a charge will be ready by end of GCD
+    local pf_ready_time = resources.phoenix_flames_ready_in(gcd)
+    if pf_ready_time < gcd then
+        logger.log(
+        "Pyro->PF pattern ACCEPTED: Phoenix Flames will be ready in " ..
+        string.format("%.2f", pf_ready_time) .. "s (before GCD ends)", 2)
+        return true
+    end
+
+    logger.log("Pyro->PF pattern REJECTED: No Phoenix Flames charges and none will be ready soon", 2)
+    return false
+end
+
+function pyro_pf_pattern.start()
+    pyro_pf_pattern.active = true
+    pyro_pf_pattern.state = "WAITING_FOR_GCD"
+    pyro_pf_pattern.start_time = core.time()
+    logger.log("Pyro->PF pattern STARTED - State: WAITING_FOR_GCD", 1)
+end
+
+function pyro_pf_pattern.reset()
+    local prev_state = pyro_pf_pattern.state
+    pyro_pf_pattern.active = false
+    pyro_pf_pattern.state = "NONE"
+    pyro_pf_pattern.start_time = 0
+    logger.log("Pyro->PF pattern RESET (from " .. prev_state .. " state)", 1)
+end
+
+function pyro_pf_pattern.execute(player, target)
+    if not pyro_pf_pattern.active then
+        return false
+    end
+
+    -- Check for GCD
+    local gcd = core.spell_book.get_global_cooldown()
+    logger.log(
+    "Pyro->PF pattern executing - Current state: " ..
+    pyro_pf_pattern.state .. ", GCD: " .. string.format("%.2f", gcd) .. "s", 3)
+
+    -- State: WAITING_FOR_GCD
+    if pyro_pf_pattern.state == "WAITING_FOR_GCD" then
+        -- Wait until GCD is almost over
+        if gcd < 0.3 then
+            logger.log("Pyro->PF pattern - GCD ending, preparing Phoenix Flames", 2)
+            pyro_pf_pattern.state = "PF_CAST"
+        else
+            logger.log("Pyro->PF pattern - Waiting for GCD (" .. string.format("%.2f", gcd) .. "s remaining)", 3)
+        end
+        return true
+
+        -- State: PHOENIX_FLAMES_CAST
+    elseif pyro_pf_pattern.state == "PF_CAST" then
+        -- Cast Phoenix Flames
+        local pf_charges = resources.get_phoenix_flames_charges()
+        logger.log("Pyro->PF pattern - Checking Phoenix Flames charges: " .. pf_charges, 3)
+
+        if pf_charges > 0 then
+            logger.log("Pyro->PF pattern - Attempting to cast Phoenix Flames", 2)
+            if spellcasting.cast_spell(SPELL.PHOENIX_FLAMES, target, false, false) then
+                pyro_pf_pattern.state = "PYROBLAST_CAST"
+                logger.log("Pyro->PF pattern - Phoenix Flames cast successful, transitioning to PYROBLAST_CAST state", 2)
+                return true
+            else
+                logger.log("Pyro->PF pattern - Phoenix Flames cast FAILED, retrying", 2)
+                return true
+            end
+        else
+            -- No charges, abandon pattern
+            logger.log("Pyro->PF pattern ABANDONED: No Phoenix Flames charges", 1)
+            pyro_pf_pattern.reset()
+            return false
+        end
+
+        -- State: PYROBLAST_CAST
+    elseif pyro_pf_pattern.state == "PYROBLAST_CAST" then
+        -- Cast Pyroblast if Hot Streak is active
+        local has_hot_streak = resources.has_hot_streak(player)
+        logger.log(
+        "Pyro->PF pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " .. tostring(has_hot_streak) .. ")", 3)
+
+        if has_hot_streak then
+            logger.log("Pyro->PF pattern - Attempting to cast Pyroblast with Hot Streak", 2)
+            if spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false) then
+                logger.log("Pyro->PF pattern COMPLETED: Full sequence executed successfully", 1)
+                pyro_pf_pattern.reset()
+                return true
+            else
+                logger.log("Pyro->PF pattern - Pyroblast cast FAILED, retrying", 2)
+                return true
+            end
+        elseif gcd <= 0 then
+            -- We should have Hot Streak by now, if not something went wrong
+            logger.log("Pyro->PF pattern ABANDONED: No Hot Streak for Pyroblast after Phoenix Flames (GCD ended)", 1)
+            pyro_pf_pattern.reset()
+            return false
+        else
+            logger.log(
+            "Pyro->PF pattern - Waiting for Hot Streak proc or GCD (Current GCD: " .. string.format("%.2f", gcd) .. "s)",
+                3)
+            return true
+        end
+    end
+
+    return true
+end
+
+-----------------------------------
+-- SCORCH-FIREBLAST PATTERN
+-----------------------------------
+local scorch_fb_pattern = {
+    active = false,
+    state = "NONE", -- NONE, SCORCH_CAST, FIRE_BLAST_CAST, PYROBLAST_CAST
+    start_time = 0
+}
+
+function scorch_fb_pattern.should_start(player)
+    logger.log("Evaluating Scorch+FB pattern conditions:", 3)
+
+    -- Don't start if other patterns are active
+    if pyro_fb_pattern.active or pyro_pf_pattern.active then
+        logger.log("Scorch+FB pattern REJECTED: Another pattern is already active", 2)
+        return false
+    end
+    logger.log("Scorch+FB pattern check: No other patterns active ✓", 3)
+
+    -- Check if we just cast Pyroblast
+    if spellcasting.last_cast ~= SPELL.PYROBLAST.name then
+        logger.log(
+        "Scorch+FB pattern REJECTED: Last cast was not Pyroblast (was " .. (spellcasting.last_cast or "nil") .. ")", 2)
+        return false
+    end
+    logger.log("Scorch+FB pattern check: Last cast WAS Pyroblast ✓", 3)
+
+    -- Check if we have no Fire Blast charges
+    local fb_charges = resources.get_fire_blast_charges()
+    if fb_charges > 0 then
+        logger.log("Scorch+FB pattern REJECTED: Still have Fire Blast charges (" .. fb_charges .. ")", 2)
+        return false
+    end
+    logger.log("Scorch+FB pattern check: No Fire Blast charges available ✓", 3)
+
+    -- Check if Combustion is active
+    local combustion_remaining = resources.get_combustion_remaining(player)
+    if combustion_remaining <= 0 then
+        logger.log("Scorch+FB pattern REJECTED: Combustion not active", 2)
+        return false
+    end
+    logger.log(
+    "Scorch+FB pattern check: Combustion is active (" ..
+    string.format("%.2f", combustion_remaining / 1000) .. "s remaining) ✓", 3)
+
+    -- Calculate if Fire Blast will be ready by the end of Scorch cast
+    local scorch_cast_time = core.spell_book.get_spell_cast_time(SPELL.SCORCH.id)
+    local fb_ready_in = resources.fire_blast_ready_in(scorch_cast_time - 0.1)
+    if fb_ready_in >= scorch_cast_time then
+        logger.log(
+        "Scorch+FB pattern REJECTED: Fire Blast won't be ready in time (Ready in: " ..
+        string.format("%.2f", fb_ready_in) .. "s, Cast time: " .. string.format("%.2f", scorch_cast_time) .. "s)", 2)
+        return false
+    end
+    logger.log("Scorch+FB pattern check: Fire Blast will be ready by cast end ✓", 3)
+
+    -- Check if Scorch cast + safety margin will finish before Combustion ends
+    local combustion_remaining_sec = combustion_remaining / 1000
+    if (scorch_cast_time + 0.1) >= combustion_remaining_sec then
+        logger.log(
+        "Scorch+FB pattern REJECTED: Not enough Combustion time left (Combustion: " ..
+        string.format("%.2f", combustion_remaining_sec) ..
+        "s, Required: " .. string.format("%.2f", scorch_cast_time + 0.1) .. "s)", 2)
+        return false
+    end
+
+    logger.log("Scorch+FB pattern ACCEPTED: All conditions met, starting sequence", 1)
+    return true
+end
+
+function scorch_fb_pattern.start()
+    scorch_fb_pattern.active = true
+    scorch_fb_pattern.state = "SCORCH_CAST"
+    scorch_fb_pattern.start_time = core.time()
+    logger.log("Scorch+FB pattern STARTED - State: SCORCH_CAST", 1)
+end
+
+function scorch_fb_pattern.reset()
+    local prev_state = scorch_fb_pattern.state
+    scorch_fb_pattern.active = false
+    scorch_fb_pattern.state = "NONE"
+    scorch_fb_pattern.start_time = 0
+    logger.log("Scorch+FB pattern RESET (from " .. prev_state .. " state)", 1)
+end
+
+function scorch_fb_pattern.execute(player, target)
+    if not scorch_fb_pattern.active then
+        return false
+    end
+
+    logger.log("Scorch+FB pattern executing - Current state: " .. scorch_fb_pattern.state, 3)
+
+    -- State: SCORCH_CAST
+    if scorch_fb_pattern.state == "SCORCH_CAST" then
+        -- Cast Scorch
+        logger.log("Scorch+FB pattern - Attempting to cast Scorch", 2)
+        if spellcasting.cast_spell(SPELL.SCORCH, target, false, false) then
+            scorch_fb_pattern.state = "FIRE_BLAST_CAST"
+            logger.log("Scorch+FB pattern - Scorch cast successful, transitioning to FIRE_BLAST_CAST state", 2)
+            return true
+        else
+            logger.log("Scorch+FB pattern - Scorch cast FAILED, retrying", 2)
+        end
+        return true
+
+        -- State: FIRE_BLAST_CAST
+    elseif scorch_fb_pattern.state == "FIRE_BLAST_CAST" then
+        -- Wait for the right moment to cast Fire Blast
+        local cast_end_time = player:get_active_spell_cast_end_time()
+        local current_time = core.game_time()
+
+        -- Cast Fire Blast near the end of Scorch cast
+        if cast_end_time > 0 and resources.get_fire_blast_charges() > 0 then
+            local remaining_cast_time = (cast_end_time - current_time) / 1000
+            local scorch_cast_time = core.spell_book.get_spell_cast_time(SPELL.SCORCH.id)
+
+            -- Fire Blast at about 70% through Scorch cast
+            if remaining_cast_time < (scorch_cast_time * 0.3) then
+                logger.log(
+                "Scorch+FB pattern - Attempting to cast Fire Blast during Scorch (Remaining cast: " ..
+                string.format("%.2f", remaining_cast_time) .. "s)", 2)
+                if spellcasting.cast_spell(SPELL.FIRE_BLAST, target, false, false) then
+                    scorch_fb_pattern.state = "PYROBLAST_CAST"
+                    logger.log("Scorch+FB pattern - Fire Blast cast successful, transitioning to PYROBLAST_CAST state", 2)
+                    return true
+                end
+            else
+                logger.log(
+                "Scorch+FB pattern - Waiting to cast Fire Blast (Remaining cast: " ..
+                string.format("%.2f", remaining_cast_time) ..
+                "s, Target: " .. string.format("%.2f", scorch_cast_time * 0.3) .. "s)", 3)
+            end
+        elseif cast_end_time == 0 then
+            -- Scorch cast finished without casting Fire Blast - check if we got Hot Streak anyway
+            if resources.has_hot_streak(player) then
+                scorch_fb_pattern.state = "PYROBLAST_CAST"
+                logger.log(
+                "Scorch+FB pattern - Scorch finished, Hot Streak already active, transitioning to PYROBLAST_CAST state",
+                    2)
+            else
+                -- Cast Fire Blast now if we have charges
+                if resources.get_fire_blast_charges() > 0 then
+                    logger.log("Scorch+FB pattern - Attempting to cast Fire Blast after Scorch", 2)
+                    if spellcasting.cast_spell(SPELL.FIRE_BLAST, target, false, false) then
+                        scorch_fb_pattern.state = "PYROBLAST_CAST"
+                        logger.log(
+                        "Scorch+FB pattern - Fire Blast cast successful after Scorch, transitioning to PYROBLAST_CAST state",
+                            2)
+                        return true
+                    end
+                else
+                    logger.log("Scorch+FB pattern ABANDONED: No Fire Blast charges after Scorch", 1)
+                    scorch_fb_pattern.reset()
+                    return false
+                end
+            end
+        end
+        return true
+
+        -- State: PYROBLAST_CAST
+    elseif scorch_fb_pattern.state == "PYROBLAST_CAST" then
+        -- Cast Pyroblast if Hot Streak is active
+        local has_hot_streak = resources.has_hot_streak(player)
+        logger.log(
+        "Scorch+FB pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " .. tostring(has_hot_streak) .. ")",
+            3)
+
+        if has_hot_streak then
+            logger.log("Scorch+FB pattern - Attempting to cast Pyroblast with Hot Streak", 2)
+            if spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false) then
+                logger.log("Scorch+FB pattern COMPLETED: Full sequence executed successfully", 1)
+                scorch_fb_pattern.reset()
+                return true
+            end
+        elseif core.spell_book.get_global_cooldown() <= 0 then
+            -- We should have Hot Streak by now, if not something went wrong
+            logger.log("Scorch+FB pattern ABANDONED: No Hot Streak for Pyroblast after Scorch+Fire Blast (GCD ended)", 1)
+            scorch_fb_pattern.reset()
+            return false
+        else
+            logger.log(
+            "Scorch+FB pattern - Waiting for Hot Streak or GCD (Current GCD: " ..
+            string.format("%.2f", core.spell_book.get_global_cooldown()) .. "s)", 3)
+        end
+        return true
+    end
+
+    return true
+end
+
+-----------------------------------
+-- TARGET SELECTION
+-----------------------------------
+local targeting = {}
+
+-- Override target selector settings
 local is_ts_overriden = false
-local function override_ts_settings()
+function targeting.override_ts_settings()
     if is_ts_overriden then
         return
     end
 
     local is_override_allowed = menu_elements.ts_custom_logic_override:get_state()
     if not is_override_allowed then
+        logger.log("Target selector override skipped: Override not enabled in menu", 3)
         return
     end
 
+    logger.log("Target selector settings overriding...", 2)
     target_selector.menu_elements.settings.max_range_damage:set(40)
-
     target_selector.menu_elements.damage.weight_multiple_hits:set(true)
     target_selector.menu_elements.damage.slider_weight_multiple_hits:set(4)
     target_selector.menu_elements.damage.slider_weight_multiple_hits_radius:set(8)
 
     is_ts_overriden = true
+    logger.log("Target selector settings successfully overridden", 2)
 end
 
-
-local previous_cast = nil
----@param local_player game_object
----@param target game_object
----@return boolean
-local function handle_combustion(local_player, target)
-    local hot_streak_data = buff_manager:get_buff_data(local_player, enums.buff_db.HOT_STREAK)
-    if hot_streak_data.is_active and cast_pyro(local_player, target) then
-        previous_cast = pyro_spell_data.name
-        return true
-    end
-
-    local hot_streak_data = buff_manager:get_buff_data(local_player, enums.buff_db.HOT_STREAK)
-
-    if hot_streak_data.is_active then
-        return false
-    end
-
-
-    if not hot_streak_data.is_active and local_player:get_active_spell_cast_end_time() and (local_player:get_active_spell_id() == fireball_spell_data.id or local_player:get_active_spell_id() == scorch_spell_data.id) and cast_fireblast(local_player, target) then
-        previous_cast = fireblast_spell_data.name
-        return true
-    end
-
-    if previous_cast == pyro_spell_data.name then
-        if core.spell_book.get_global_cooldown() > 0.3 then
-            return false
-        end
-
-        if not hot_streak_data.is_active and cast_fireblast(local_player, target) then
-            previous_cast = fireblast_spell_data.name
-            return true
-        end
-
-
-        if cast_PF(local_player, target) then
-            previous_cast = phoenix_flames_spell_data.name
-            return true
-        end
-
-        if cast_scorch(local_player, target) then
-            previous_cast = scorch_spell_data.name
-            return true
-        end
-    end
-    return false
-end
-
-local function my_on_update()
-    -- Control Panel Drag & Drop
-    control_panel_helper:on_update(menu_elements)
-
-    -- no local player usually means that the user is in loading screen / not ingame
-    local local_player = core.object_manager.get_local_player()
-    if not local_player then
-        return
-    end
-
-    -- check if the user disabled the script
-    if not menu_elements.enable_script_check:get_state() then
-        return
-    end
-
-    if not plugin_helper:is_toggle_enabled(menu_elements.enable_toggle) then
-        return
-    end
-
-    local channel_end_time = local_player:get_active_channel_cast_end_time()
-    if channel_end_time > 0.0 then
-        return false
-    end
-
-
-
-    local target_to_kill = nil
-
+-- Get best target
+function targeting.get_best_target()
     local targets_list = target_selector:get_targets()
-    for index, target in ipairs(targets_list) do
-        local is_target_in_combat = unit_helper:is_in_combat(target)
-        if is_target_in_combat and not pvp_utiltiy:is_damage_immune(target, pvp_utiltiy.damage_type_flags.MAGICAL) then
-            -- check that the unit is in combat, if we don't attack out of combat mobs
-            -- by default target selector should not send you units out of combat, but this can be changed and you decide here in code if you acept them
-            target_to_kill = target
-            break
+
+    for i, target in ipairs(targets_list) do
+        if unit_helper:is_in_combat(target) and not pvp_helper:is_damage_immune(target, pvp_helper.damage_type_flags.MAGICAL) then
+            logger.log("Target selected: #" .. i .. " from target selector list", 3)
+            return target
         end
     end
 
-    if not target_to_kill then
-        return false
-    end
-
-    local remaining_cast = (math.max(local_player:get_active_spell_cast_end_time()) - core.game_time()) / 1000
-    local max_cast_end_time = math.max(remaining_cast,
-        core.spell_book.get_global_cooldown())
-
-    local combustion_data = buff_manager:get_buff_data(local_player, enums.buff_db.COMBUSTION)
-
-    if combustion_data.is_active then
-        handle_combustion(local_player, target_to_kill)
-        return true
-    end
-
-    -- if max_cast_end_time > 0.0 and max_cast_end_time < .35 then
-    --     cast_fireblast(local_player, target_to_kill)
-    -- end
-
-    if max_cast_end_time > 0.0 and core.spell_book.get_global_cooldown() > 0 then
-        return false
-    end
-
-
-
-    -- do not run the rotation code while in mount, so you dont auto dismount by mistake
-    if local_player:is_mounted() then
-        return
-    end
-
-    -- NOTE: you should override the target selector settings according to your script requirements. You shouldn't leave these configuration
-    -- options entirely to your users, since you are the one crafting the magical script, and you are the one who knows which settings will
-    -- work best, according to your code. To see how to do this properly, check the Target Selector - Dev guide.
-    override_ts_settings()
-
-    -- Get all targets from the target selector
-    -- local targets_list = target_selector:get_targets()
-
-    -- Core useful boolean to determine if defensive actions are allowed
-    -- local is_defensive_allowed = plugin_helper:is_defensive_allowed()
-
-    -- Defensive logic: typically run defensive spells before any offensive actions
-    -- This is a good place to implement your defensive routines.
-    -- You can cast basic defensive spells directly, or loop through targets if specific targeting is needed.
-    -- for index, target in ipairs(targets_list) do
-    -- if is_defensive_allowed then
-    -- **Add defensive spells here**
-    -- (...)
-
-    -- After each defensive cast, consider setting a delay before the next one
-
-    -- e.g
-    -- local time_in_seconds = 0.50
-    -- plugin_helper:set_defensive_block_time(time_in_seconds)
-    -- end
-    -- end
-
-    -- Some classes have healing capabilities and may also want to apply defensive logic to teammates.
-
-    -- Get all healing targets using the target selector
-    -- local heal_targets_list = target_selector:get_targets_heal()
-
-    if complete_cast_logic(local_player, target_to_kill) then
-        return true
-    end
-
-    -- (...)
+    logger.log("No valid targets found", 3)
+    return nil
 end
 
--- render the "Disabled" rectangle box when the user has the script toggled off
-local function my_on_render()
-    local local_player = core.object_manager.get_local_player()
-    if not local_player then
+-----------------------------------
+-- UI RENDERING
+-----------------------------------
+local ui = {}
+
+-- Render menu UI
+function ui.render_menu()
+    menu_elements.main_tree:render("Fire Mage Enhanced", function()
+        menu_elements.enable_script_check:render("Enable Script")
+
+        if not menu_elements.enable_script_check:get_state() then
+            return
+        end
+
+        menu_elements.keybinds_tree_node:render("Keybinds", function()
+            menu_elements.enable_toggle:render("Enable Script Toggle")
+        end)
+
+        menu_elements.ts_custom_logic_override:render("Enable TS Custom Settings Override",
+            "Allows the script to automatically adjust target selection settings")
+        menu_elements.debug_info:render("Show Debug Info", "Display real-time information about script decisions")
+        menu_elements.draw_plugin_state:render("Draw Plugin State", "Shows enabled/disabled status on screen")
+        menu_elements.log_level:render("Log Detail Level", "1=Minimal, 2=Normal, 3=Verbose")
+    end)
+end
+
+-- Render control panel
+function ui.render_control_panel()
+    local control_panel_elements = {}
+
+    control_panel_helper:insert_toggle(control_panel_elements, {
+        name = "[Fire Mage] Enable (" .. key_helper:get_key_name(menu_elements.enable_toggle:get_key_code()) .. ")",
+        keybind = menu_elements.enable_toggle
+    })
+
+    return control_panel_elements
+end
+
+-- Render on-screen UI
+function ui.render()
+    local player = core.object_manager.get_local_player()
+    if not player then
         return
     end
 
@@ -658,27 +815,165 @@ local function my_on_render()
         if menu_elements.draw_plugin_state:get_state() then
             plugin_helper:draw_text_character_center("DISABLED")
         end
+        return
+    end
+
+    -- Show debug info if enabled
+    if menu_elements.debug_info:get_state() then
+        -- Build status text
+        local combustion_active = buff_manager:get_buff_data(player, BUFF.COMBUSTION).is_active
+        local hot_streak_active = resources.has_hot_streak(player)
+        local heating_up_active = resources.has_heating_up(player)
+
+        local active_pattern = "None"
+        if pyro_fb_pattern.active then
+            active_pattern = "Pyro->FB: " .. pyro_fb_pattern.state
+        elseif pyro_pf_pattern.active then
+            active_pattern = "Pyro->PF: " .. pyro_pf_pattern.state
+        elseif scorch_fb_pattern.active then
+            active_pattern = "Scorch+FB: " .. scorch_fb_pattern.state
+        end
+
+        local text = "Last Cast: " .. (spellcasting.last_cast or "None") ..
+            "\nPattern: " .. active_pattern ..
+            "\nFire Blast: " .. resources.get_fire_blast_charges() ..
+            ", PF: " .. resources.get_phoenix_flames_charges() ..
+            "\nCombustion: " .. (combustion_active and "Active" or "Inactive") ..
+            "\nHot Streak: " .. (hot_streak_active and "Active" or "Inactive") ..
+            "\nHeating Up: " .. (heating_up_active and "Active" or "Inactive")
+
+        -- Add recent logs
+        if #logger.logs > 0 then
+            text = text .. "\n\nRecent Actions:"
+            for i = 1, math.min(5, #logger.logs) do
+                text = text .. "\n- " .. logger.logs[i]
+            end
+        end
+
+        plugin_helper:draw_text_character_center(text, nil, 100)
     end
 end
 
----@type key_helper
-local key_helper = require("common/utility/key_helper")
-local function on_control_panel_render()
-    -- Enable Toggle on Control Panel, Default Unbinded, still clickeable tho.
-
-    local control_panel_elements = {}
-    control_panel_helper:insert_toggle(control_panel_elements,
-        {
-            name = "[" ..
-                "MageTest" .. "] Enable (" .. key_helper:get_key_name(menu_elements.enable_toggle:get_key_code()) .. ") ",
-            keybind = menu_elements.enable_toggle
-        })
-
-    return control_panel_elements
+-----------------------------------
+-- MAIN EXECUTION
+-----------------------------------
+local function isAnyPatternActive()
+    return pyro_fb_pattern.active or pyro_pf_pattern.active or scorch_fb_pattern.active
 end
 
--- Register Callbacks
-core.register_on_update_callback(my_on_update)
-core.register_on_render_callback(my_on_render)
-core.register_on_render_menu_callback(my_menu_render)
-core.register_on_render_control_panel_callback(on_control_panel_render)
+local function on_update()
+    -- Update logger level
+    logger.update_level()
+
+    -- Update control panel
+    control_panel_helper:on_update(menu_elements)
+
+    -- Check if player exists
+    local player = core.object_manager.get_local_player()
+    if not player then
+        return
+    end
+
+    -- Check if script is enabled
+    if not menu_elements.enable_script_check:get_state() or not plugin_helper:is_toggle_enabled(menu_elements.enable_toggle) then
+        return
+    end
+
+    -- Don't cast during channeling
+    local channel_end_time = player:get_active_channel_cast_end_time()
+    if channel_end_time > 0.0 then
+        logger.log("Skipping: Player is channeling", 3)
+        return
+    end
+
+    -- Don't cast while mounted
+    if player:is_mounted() then
+        logger.log("Skipping: Player is mounted", 3)
+        return
+    end
+
+    -- Don't cast during another cast
+    local cast_end_time = player:get_active_spell_cast_end_time()
+    if cast_end_time > core.game_time() then
+        logger.log("Skipping: Player is casting (time remaining: " .. ((cast_end_time - core.game_time()) / 1000) .. "s)",
+            3)
+        return
+    end
+
+    -- Override target selector settings
+    targeting.override_ts_settings()
+
+    -- Get target
+    local target = targeting.get_best_target()
+    if not target then
+        logger.log("Skipping: No valid target found", 3)
+        return
+    end
+
+    logger.log("Evaluating patterns with target: " .. target:get_name(), 3)
+    local combustion_time = resources.get_combustion_remaining(player)
+
+    if combustion_time > 0 then
+        logger.log("Combustion is active (" .. string.format("%.2f", combustion_time / 1000) .. "s remaining)", 2)
+
+        -- Check if we need to start the pattern
+        if not isAnyPatternActive() then
+            logger.log("No pattern active, checking for pattern to start", 3)
+
+            if pyro_fb_pattern.should_start(player) then
+                pyro_fb_pattern.start()
+            elseif pyro_pf_pattern.should_start(player) then
+                pyro_pf_pattern.start()
+            elseif scorch_fb_pattern.should_start(player) then
+                scorch_fb_pattern.start()
+            end
+        end
+
+        -- Execute patterns if active
+        if pyro_fb_pattern.active and pyro_fb_pattern.execute(player, target) then
+            return
+        end
+
+        if pyro_pf_pattern.active and pyro_pf_pattern.execute(player, target) then
+            return
+        end
+
+        if scorch_fb_pattern.active and scorch_fb_pattern.execute(player, target) then
+            return
+        end
+    else
+        logger.log("Combustion not active, using standard rotation", 3)
+    end
+
+    -- Check for Hot Streak
+    if resources.has_hot_streak(player) then
+        logger.log("Standard rotation: Hot Streak detected, casting Pyroblast", 2)
+        spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false)
+        return
+    end
+
+    -- Check for Heating Up (Hyperthermia)
+    if resources.has_heating_up(player) then
+        logger.log("Standard rotation: Heating Up detected, attempting to proc Hot Streak", 2)
+
+        -- If we have Fire Blast, use it to convert Heating Up to Hot Streak
+        if resources.get_fire_blast_charges() > 0 then
+            logger.log("Standard rotation: Using Fire Blast to convert Heating Up to Hot Streak", 2)
+            if spellcasting.cast_spell(SPELL.FIRE_BLAST, target, false, false) then
+                return
+            end
+        end
+    end
+
+    -- Default to Fireball
+    logger.log("Standard rotation: Casting Fireball", 3)
+    spellcasting.cast_spell(SPELL.FIREBALL, target, false, false)
+end
+
+-----------------------------------
+-- REGISTER CALLBACKS
+-----------------------------------
+core.register_on_update_callback(on_update)
+core.register_on_render_callback(ui.render)
+core.register_on_render_menu_callback(ui.render_menu)
+core.register_on_render_control_panel_callback(ui.render_control_panel)
