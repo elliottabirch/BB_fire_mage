@@ -1,32 +1,43 @@
--- Fire Mage Script - Enhanced with Comprehensive Pattern-Based Logic
--- Focuses on optimal Fire Blast usage and pattern-based spell casting during Combustion
+--[[
+  Fire Mage Script - Enhanced with Pattern-Based Rotation Logic
+  Optimized for Fire Mage performance with sophisticated spell sequencing and resource management
+]]
 
 -----------------------------------
 -- MODULE IMPORTS
 -----------------------------------
+-- Core functionality modules
 ---@type enums
 local enums = require("common/enums")
----@type pvp_helper
-local pvp_helper = require("common/utility/pvp_helper")
----@type spell_queue
-local spell_queue = require("common/modules/spell_queue")
----@type unit_helper
-local unit_helper = require("common/utility/unit_helper")
----@type spell_helper
-local spell_helper = require("common/utility/spell_helper")
 ---@type buff_manager
 local buff_manager = require("common/modules/buff_manager")
----@type plugin_helper
-local plugin_helper = require("common/utility/plugin_helper")
+---@type spell_queue
+local spell_queue = require("common/modules/spell_queue")
 ---@type target_selector
 local target_selector = require("common/modules/target_selector")
+
+-- Utility modules
+---@type spell_helper
+local spell_helper = require("common/utility/spell_helper")
+---@type unit_helper
+local unit_helper = require("common/utility/unit_helper")
+---@type pvp_helper
+local pvp_helper = require("common/utility/pvp_helper")
+---@type plugin_helper
+local plugin_helper = require("common/utility/plugin_helper")
 ---@type key_helper
 local key_helper = require("common/utility/key_helper")
 ---@type control_panel_helper
 local control_panel_helper = require("common/utility/control_panel_helper")
 
-local reset_time = .75
-local combust_precast_time = 500
+-----------------------------------
+-- CONSTANTS
+-----------------------------------
+-- Pattern timing settings
+---@type number
+local PATTERN_RESET_TIME = 0.75     -- Time window for pattern reset in seconds
+---@type number
+local COMBUSTION_PRECAST_TIME = 500 -- Milliseconds before end of Fireball cast to start Combustion
 -----------------------------------
 -- SPELL DATA DEFINITIONS
 -----------------------------------
@@ -374,7 +385,7 @@ function pyro_fb_pattern.execute(player, target)
                 logger.log("Pyro->FB pattern - Pyroblast cast FAILED, retrying", 2)
                 return true
             end
-        elseif gcd <= 0 and pyro_fb_pattern.start_time + reset_time > core.time() then
+        elseif gcd <= 0 and pyro_fb_pattern.start_time + PATTERN_RESET_TIME > core.time() then
             -- We should have Hot Streak by now, if not something went wrong
             logger.log("start time plus 1 " .. pyro_fb_pattern.start_time + 1)
             logger.log("core time " .. core.time())
@@ -517,7 +528,7 @@ function pyro_pf_pattern.execute(player, target)
                 return true
             end
         end
-    elseif gcd <= 0 and pyro_pf_pattern.start_time + reset_time > core.time() then
+    elseif gcd <= 0 and pyro_pf_pattern.start_time + PATTERN_RESET_TIME > core.time() then
         -- We should have Hot Streak by now, if not something went wrong
         logger.log("start time plus 1 " .. pyro_fb_pattern.start_time + 1)
         logger.log("core time " .. core.time())
@@ -764,7 +775,7 @@ function combustion_opener_pattern.should_start(player)
         return false
     end
 
-    if active_spell_id ~= SPELL.FIREBALL.id or remaining_cast_time < combust_precast_time then
+    if active_spell_id ~= SPELL.FIREBALL.id or remaining_cast_time < COMBUSTION_PRECAST_TIME then
         logger.log("Combustion Opener REJECTED: not casting fireball, or cast time is less than 300ms", 2)
         return false
     end
@@ -805,7 +816,7 @@ function combustion_opener_pattern.execute(player, target)
         local current_time = core.game_time()
         local remaining_cast_time = (cast_end_time - current_time)
 
-        if remaining_cast_time < combust_precast_time then
+        if remaining_cast_time < COMBUSTION_PRECAST_TIME then
             -- If Fireball cast time is <300ms, cast Combustion
             logger.log("Combustion Opener - Fireball cast time < 300ms, casting Combustion", 2)
             combustion_opener_pattern.state = "COMBUSTION_CAST"
