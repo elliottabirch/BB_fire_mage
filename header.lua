@@ -1,6 +1,6 @@
 local plugin = {}
 
-plugin["name"] = "Fire Mage Rotation"
+plugin["name"] = "Fire Mage Rotation copy"
 plugin["version"] = "1.0.0"
 plugin["author"] = "Claude"
 plugin["load"] = true
