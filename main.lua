@@ -288,7 +288,7 @@ function pyro_fb_pattern.should_start(player)
     end
 
     -- Check if a charge will be ready by end of GCD
-    local fb_ready_time = resources.fire_blast_ready_in(gcd - 0.2)
+    local fb_ready_time = resources.fire_blast_ready_in(gcd - 0.5)
     if fb_ready_time < gcd then
         logger.log(
             "Pyro->FB pattern ACCEPTED: Fire Blast will be ready in " ..
@@ -586,14 +586,6 @@ function scorch_fb_pattern.should_start(player)
 
     -- Calculate if Fire Blast will be ready by the end of Scorch cast
     local scorch_cast_time = core.spell_book.get_spell_cast_time(SPELL.SCORCH.id)
-    local fb_ready_in = resources.fire_blast_ready_in(scorch_cast_time - 0.1)
-    if fb_ready_in >= scorch_cast_time then
-        logger.log(
-            "Scorch+FB pattern REJECTED: Fire Blast won't be ready in time (Ready in: " ..
-            string.format("%.2f", fb_ready_in) .. "s, Cast time: " .. string.format("%.2f", scorch_cast_time) .. "s)", 2)
-        return false
-    end
-    logger.log("Scorch+FB pattern check: Fire Blast will be ready by cast end ✓", 3)
 
     -- Check if Scorch cast + safety margin will finish before Combustion ends
     local combustion_remaining_sec = combustion_remaining / 1000
@@ -657,44 +649,56 @@ function scorch_fb_pattern.execute(player, target)
                 "Scorch+FB pattern - Attempting to cast Fire Blast during Scorch (Remaining cast: " ..
                 string.format("%.2f", remaining_cast_time) .. "s)", 2)
             if spellcasting.cast_spell(SPELL.FIRE_BLAST, target, false, false) then
-                scorch_fb_pattern.state = "PYROBLAST_CAST"
+                scorch_fb_pattern.state = "FIRST_PYROBLAST_CAST"
                 logger.log("Scorch+FB pattern - Fire Blast cast successful, transitioning to PYROBLAST_CAST state", 2)
                 return true
             end
         elseif cast_end_time == 0 then
             -- Scorch cast finished without casting Fire Blast - check if we got Hot Streak anyway
-
-            logger.log("Scorch+FB pattern ABANDONED: No Fire Blast charges after Scorch", 1)
-            scorch_fb_pattern.reset()
-            return false
+            scorch_fb_pattern.state = "SECOND_PYROBLAST_CAST"
+            logger.log("Scorch+FB pattern: No Fire Blast charges after Scorch, transitioning to PYROBLAST_CAST state",
+                1)
+            return true
         end
         return true
 
         -- State: PYROBLAST_CAST
-    elseif scorch_fb_pattern.state == "PYROBLAST_CAST" then
+    elseif scorch_fb_pattern.state == "FIRST_PYROBLAST_CAST" then
         -- Cast Pyroblast if Hot Streak is active
         local has_hot_streak = resources.has_hot_streak(player)
         logger.log(
             "Scorch+FB pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " ..
             tostring(has_hot_streak) .. ")",
             3)
-
-        if has_hot_streak then
+        local cast_end_time = player:get_active_spell_cast_end_time()
+        local current_time = core.game_time()
+        local remaining_cast_time = (cast_end_time - current_time) / 1000
+        if remaining_cast_time <= 0 then
             logger.log("Scorch+FB pattern - Attempting to cast Pyroblast with Hot Streak", 2)
+            if spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false) then
+                logger.log("Scorch+FB pattern: first pyro cast, advanceing to SECOND_PYROBLAST_CAST", 1)
+                scorch_fb_pattern.state = "SECOND_PYROBLAST_CAST"
+                return true
+            end
+        else
+            logger.log(
+                "Scorch+FB pattern - Waiting for scorch cast to end (Current cast: " ..
+                string.format("%.2f", remaining_cast_time) .. "s)", 3)
+        end
+        return true
+    elseif scorch_fb_pattern.state == "SECOND_PYROBLAST_CAST" then
+        local gcd = core.spell_book.get_global_cooldown()
+        if gcd <= 0 then
+            logger.log("Scorch+FB pattern - Attempting to cast second Pyroblast with Hot Streak", 2)
             if spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false) then
                 logger.log("Scorch+FB pattern COMPLETED: Full sequence executed successfully", 1)
                 scorch_fb_pattern.reset()
                 return true
             end
-        elseif core.spell_book.get_global_cooldown() <= 0 then
-            -- We should have Hot Streak by now, if not something went wrong
-            logger.log("Scorch+FB pattern ABANDONED: No Hot Streak for Pyroblast after Scorch+Fire Blast (GCD ended)", 1)
-            scorch_fb_pattern.reset()
-            return false
         else
             logger.log(
-                "Scorch+FB pattern - Waiting for Hot Streak or GCD (Current GCD: " ..
-                string.format("%.2f", core.spell_book.get_global_cooldown()) .. "s)", 3)
+                "Scorch+FB pattern - Waiting for GCD to end (GCD: " ..
+                string.format("%.2f", gcd) .. "s)", 3)
         end
         return true
     end
