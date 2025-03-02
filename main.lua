@@ -188,11 +188,18 @@ end
 -----------------------------------
 -- SPELL CASTING SYSTEM
 -----------------------------------
+---@class SpellcastingSystem
+---@field last_cast string|nil Name of the last cast spell
+---@field last_cast_time number Time of the last spell cast
+
+-- Initialize spellcasting system
 local spellcasting = {
     last_cast = nil,
     last_cast_time = 0
 }
 
+---Records a successful spell cast
+---@param spell SpellData The spell that was cast
 local function setLastCast(spell)
     local current_time = core.time()
     spell.last_cast = current_time
@@ -201,30 +208,33 @@ local function setLastCast(spell)
     logger.log("CAST SUCCESS: " .. spell.name, 1)
 end
 
+---Attempts to cast a spell if all conditions are met
+---@param spell SpellData The spell to cast
+---@param target game_object The target to cast on
+---@param skip_facing boolean Whether to skip facing requirements
+---@param skip_range boolean Whether to skip range requirements
+---@return boolean Whether the spell was successfully queued
 function spellcasting.cast_spell(spell, target, skip_facing, skip_range)
     local current_time = core.time()
+    local player = core.object_manager.get_local_player()
+
     -- Check if spell is castable
-    local is_spell_castable = spell_helper:is_spell_castable(spell.id, core.object_manager.get_local_player(),
-        target, skip_facing, skip_range)
-    if not is_spell_castable then
+    if not spell_helper:is_spell_castable(spell.id, player, target, skip_facing, skip_range) then
         logger.log("Cast rejected: " .. spell.name .. " (Not castable)", 2)
         return false
     end
+
     -- Check rate limiting to prevent spam
     if current_time - spell.last_cast < spell.cast_delay then
         logger.log("Cast rejected: " .. spell.name .. " (Rate limited)", 3)
         return false
     end
 
-
-
-    -- Queue the spell based on whether it's off the GCD or not
+    -- Queue the spell using the appropriate method
     if spell.is_off_gcd then
-        spell_queue:queue_spell_target_fast(spell.id, target, spell.priority,
-            "Casting " .. spell.name)
+        spell_queue:queue_spell_target_fast(spell.id, target, spell.priority, "Casting " .. spell.name)
     else
-        spell_queue:queue_spell_target(spell.id, target, spell.priority,
-            "Casting " .. spell.name)
+        spell_queue:queue_spell_target(spell.id, target, spell.priority, "Casting " .. spell.name)
     end
 
     setLastCast(spell)
@@ -234,67 +244,112 @@ end
 -----------------------------------
 -- RESOURCE TRACKING
 -----------------------------------
+---@class Resources
+---@field get_fire_blast_charges fun(): number Get current Fire Blast charges
+---@field fire_blast_ready_in fun(seconds: number): number Time until Fire Blast is ready
+---@field has_hot_streak fun(player: game_object): boolean Check for Hot Streak buff
+---@field has_heating_up fun(player: game_object): boolean Check for Heating Up buff
+---@field has_hyperthermia fun(player: game_object): boolean Check for Hyperthermia
+---@field get_phoenix_flames_charges fun(): number Get current Phoenix Flames charges
+---@field phoenix_flames_ready_in fun(seconds: number): number Time until Phoenix Flames is ready
+---@field get_combustion_remaining fun(player: game_object): number Remaining Combustion time
+---@field fire_blast_will_be_ready fun(duration: number): boolean Whether Fire Blast will be ready
+
+-- Initialize resources module
 local resources = {}
 
+---Get current Fire Blast charges
+---@return number Number of available charges
 function resources.get_fire_blast_charges()
     return core.spell_book.get_spell_charge(SPELL.FIRE_BLAST.id)
 end
 
+---Calculate time until Fire Blast charge is ready
+---@param seconds number The time window to check within
+---@return number Time until ready or 999 if longer than specified window
 function resources.fire_blast_ready_in(seconds)
     local charge_cd = core.spell_book.get_spell_charge_cooldown_duration(SPELL.FIRE_BLAST.id)
     local start_time = core.spell_book.get_spell_charge_cooldown_start_time(SPELL.FIRE_BLAST.id)
 
+    -- If no cooldown or has charges, return 0
     if start_time == 0 or resources.get_fire_blast_charges() > 0 then
         return 0
     end
 
+    -- Calculate remaining time in seconds
     local remaining = math.max(0, (start_time + charge_cd - core.game_time()) / 1000)
-    logger.log("Remaining time for Fire Blast to be ready: " .. remaining)
 
+    -- Return time or 999 if outside window
     return remaining <= seconds and remaining or 999
 end
 
+---Check if player has Hot Streak buff
+---@param player game_object The player to check
+---@return boolean True if Hot Streak is active
 function resources.has_hot_streak(player)
-    local hot_streak_data = buff_manager:get_buff_data(player, BUFF.HOT_STREAK)
-    return hot_streak_data.is_active
+    local buff_data = buff_manager:get_buff_data(player, BUFF.HOT_STREAK)
+    return buff_data.is_active
 end
 
+---Check if player has Heating Up buff
+---@param player game_object The player to check
+---@return boolean True if Heating Up is active
 function resources.has_heating_up(player)
-    local heating_up_data = buff_manager:get_buff_data(player, BUFF.HEATING_UP)
-    return heating_up_data.is_active
+    local buff_data = buff_manager:get_buff_data(player, BUFF.HEATING_UP)
+    return buff_data.is_active
 end
 
+---Check if player has Hyperthermia debuff
+---@param player game_object The player to check
+---@return boolean True if Hyperthermia is active
 function resources.has_hyperthermia(player)
-    local heating_up_data = buff_manager:get_buff_data(player, BUFF.HYPERTHERMIA)
-    return heating_up_data.is_active
+    local buff_data = buff_manager:get_buff_data(player, BUFF.HYPERTHERMIA)
+    return buff_data.is_active
 end
 
+---Get current Phoenix Flames charges
+---@return number Number of available charges
 function resources.get_phoenix_flames_charges()
     return core.spell_book.get_spell_charge(SPELL.PHOENIX_FLAMES.id)
 end
 
+---Calculate time until Phoenix Flames charge is ready
+---@param seconds number The time window to check within
+---@return number Time until ready or 999 if longer than specified window
 function resources.phoenix_flames_ready_in(seconds)
     local charge_cd = core.spell_book.get_spell_charge_cooldown_duration(SPELL.PHOENIX_FLAMES.id)
     local start_time = core.spell_book.get_spell_charge_cooldown_start_time(SPELL.PHOENIX_FLAMES.id)
 
+    -- If no cooldown or has charges, return 0
     if start_time == 0 or resources.get_phoenix_flames_charges() > 0 then
         return 0
     end
 
+    -- Calculate remaining time in seconds
     local remaining = math.max(0, (start_time + charge_cd - core.game_time()) / 1000)
+
+    -- Return time or 999 if outside window
     return remaining <= seconds and remaining or 999
 end
 
+---Get remaining Combustion buff time
+---@param player game_object The player to check
+---@return number Remaining duration in milliseconds (0 if not active)
 function resources.get_combustion_remaining(player)
     local combustion_data = buff_manager:get_buff_data(player, BUFF.COMBUSTION)
     return combustion_data.is_active and combustion_data.remaining or 0
 end
 
+---Check if Fire Blast will be ready within specified duration
+---@param duration number The time window to check
+---@return boolean True if it will be ready in time
 function resources.fire_blast_will_be_ready(duration)
+    -- If has charges, already ready
     if resources.get_fire_blast_charges() > 0 then
         return true
     end
 
+    -- Check cooldown data
     local charge_cd = core.spell_book.get_spell_charge_cooldown_duration(SPELL.FIRE_BLAST.id)
     local start_time = core.spell_book.get_spell_charge_cooldown_start_time(SPELL.FIRE_BLAST.id)
 
@@ -302,26 +357,46 @@ function resources.fire_blast_will_be_ready(duration)
         return false
     end
 
+    -- Calculate time until charge and compare with duration
     local time_until_charge = (start_time + charge_cd - core.game_time()) / 1000
     return time_until_charge < duration
 end
 
 -----------------------------------
+-- SPELL PATTERNS - BASE TYPES
+-----------------------------------
+---@class SpellPattern
+---@field active boolean Whether the pattern is currently active
+---@field state string Current state of the pattern execution
+---@field start_time number Time when the pattern was started
+---@field should_start fun(player: game_object): boolean Whether the pattern should be started
+---@field start fun(): void Start the pattern execution
+---@field reset fun(): void Reset the pattern state
+---@field execute fun(player: game_object, target: game_object): boolean Execute the pattern logic
+
+-----------------------------------
 -- PYROBLAST-FIREBLAST PATTERN
 -----------------------------------
+---@class PyroFireblastPattern : SpellPattern
+---@field active boolean Whether the pattern is currently active
+---@field state string Current state in the execution sequence
+---@field start_time number Time when the pattern was started
 local pyro_fb_pattern = {
     active = false,
     state = "NONE", -- NONE, WAITING_FOR_GCD, FIRE_BLAST_CAST, PYROBLAST_CAST
     start_time = 0
 }
 
+---Determines if the Pyroblast->Fire Blast pattern should be activated
+---@param player game_object The player character
+---@return boolean True if the pattern should be started
 function pyro_fb_pattern.should_start(player)
     logger.log("Evaluating Pyro->FB pattern conditions:", 3)
 
     -- Check if we just cast Pyroblast
     if spellcasting.last_cast ~= SPELL.PYROBLAST.name then
-        logger.log(
-            "Pyro->FB pattern REJECTED: Last cast was not Pyroblast (was " .. (spellcasting.last_cast or "nil") .. ")", 2)
+        logger.log("Pyro->FB pattern REJECTED: Last cast was not Pyroblast (was " ..
+            (spellcasting.last_cast or "nil") .. ")", 2)
         return false
     end
     logger.log("Pyro->FB pattern check: Last cast WAS Pyroblast ✓", 3)
@@ -335,16 +410,16 @@ function pyro_fb_pattern.should_start(player)
     logger.log("Pyro->FB pattern check: GCD is active (" .. string.format("%.2f", gcd) .. "s) ✓", 3)
 
     -- Check if we have Fire Blast charge or will have one soon
-    if resources.get_fire_blast_charges() > 0 then
-        logger.log("Pyro->FB pattern ACCEPTED: Have Fire Blast charges (" .. resources.get_fire_blast_charges() .. ")", 2)
+    local fb_charges = resources.get_fire_blast_charges()
+    if fb_charges > 0 then
+        logger.log("Pyro->FB pattern ACCEPTED: Have Fire Blast charges (" .. fb_charges .. ")", 2)
         return true
     end
 
     -- Check if a charge will be ready by end of GCD
     local fb_ready_time = resources.fire_blast_ready_in(gcd - 0.5)
     if fb_ready_time < gcd then
-        logger.log(
-            "Pyro->FB pattern ACCEPTED: Fire Blast will be ready in " ..
+        logger.log("Pyro->FB pattern ACCEPTED: Fire Blast will be ready in " ..
             string.format("%.2f", fb_ready_time) .. "s (before GCD ends)", 2)
         return true
     end
@@ -353,6 +428,7 @@ function pyro_fb_pattern.should_start(player)
     return false
 end
 
+---Starts the Pyroblast->Fire Blast pattern
 function pyro_fb_pattern.start()
     pyro_fb_pattern.active = true
     pyro_fb_pattern.state = "WAITING_FOR_GCD"
@@ -360,6 +436,7 @@ function pyro_fb_pattern.start()
     logger.log("Pyro->FB pattern STARTED - State: WAITING_FOR_GCD", 1)
 end
 
+---Resets the Pyroblast->Fire Blast pattern
 function pyro_fb_pattern.reset()
     local prev_state = pyro_fb_pattern.state
     pyro_fb_pattern.active = false
@@ -368,32 +445,36 @@ function pyro_fb_pattern.reset()
     logger.log("Pyro->FB pattern RESET (from " .. prev_state .. " state)", 1)
 end
 
+---Executes the Pyroblast->Fire Blast pattern
+---@param player game_object The player character
+---@param target game_object The target to cast on
+---@return boolean True if pattern execution is continuing
 function pyro_fb_pattern.execute(player, target)
     if not pyro_fb_pattern.active then
         return false
     end
-    local hasHotStreak = resources.has_hot_streak(player)
-    -- Check for GCD
+
+    local has_hot_streak = resources.has_hot_streak(player)
     local gcd = core.spell_book.get_global_cooldown()
-    logger.log(
-        "Pyro->FB pattern executing - Current state: " ..
+
+    logger.log("Pyro->FB pattern executing - Current state: " ..
         pyro_fb_pattern.state .. ", GCD: " .. string.format("%.2f", gcd) .. "s", 3)
 
     -- State: WAITING_FOR_GCD
     if pyro_fb_pattern.state == "WAITING_FOR_GCD" then
         -- Wait until GCD is almost over
         local fb_charges = resources.get_fire_blast_charges()
+
         if gcd > 0 and fb_charges > 0 then
-            logger.log("Pyro->FB pattern - GCD started, preparing Fire Blast (Fire Blast charges: " .. fb_charges .. ")",
-                2)
+            logger.log("Pyro->FB pattern - GCD started, preparing Fire Blast (Fire Blast charges: " ..
+                fb_charges .. ")", 2)
             pyro_fb_pattern.state = "FIRE_BLAST_CAST"
         elseif gcd <= 0 then
             logger.log("Pyro->FB pattern - GCD EXPIRED but no Fire Blast charges, aborting pattern", 2)
             pyro_fb_pattern.reset()
             return false
         else
-            logger.log(
-                "Pyro->FB pattern - Waiting for GCD (" ..
+            logger.log("Pyro->FB pattern - Waiting for GCD (" ..
                 string.format("%.2f", gcd) .. "s remaining, FB charges: " .. fb_charges .. ")", 3)
         end
         return true
@@ -402,7 +483,7 @@ function pyro_fb_pattern.execute(player, target)
     elseif pyro_fb_pattern.state == "FIRE_BLAST_CAST" then
         -- Cast Fire Blast
         logger.log("Pyro->FB pattern - Attempting to cast Fire Blast", 2)
-        if not hasHotStreak and spellcasting.cast_spell(SPELL.FIRE_BLAST, target, false, false) then
+        if not has_hot_streak and spellcasting.cast_spell(SPELL.FIRE_BLAST, target, false, false) then
             pyro_fb_pattern.state = "PYROBLAST_CAST"
             logger.log("Pyro->FB pattern - Fire Blast cast successful, transitioning to PYROBLAST_CAST state", 2)
             return true
@@ -414,7 +495,6 @@ function pyro_fb_pattern.execute(player, target)
         -- State: PYROBLAST_CAST
     elseif pyro_fb_pattern.state == "PYROBLAST_CAST" then
         -- Cast Pyroblast if Hot Streak is active
-
         if gcd == 0 then
             logger.log("Pyro->FB pattern - Attempting to cast Pyroblast with Hot Streak", 2)
             if spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false) then
@@ -425,18 +505,14 @@ function pyro_fb_pattern.execute(player, target)
                 logger.log("Pyro->FB pattern - Pyroblast cast FAILED, retrying", 2)
                 return true
             end
-        elseif gcd <= 0 and pyro_fb_pattern.start_time + PATTERN_RESET_TIME > core.time() then
+        elseif gcd <= 0 and pyro_fb_pattern.start_time + PATTERN_RESET_TIME < core.time() then
             -- We should have Hot Streak by now, if not something went wrong
-            logger.log("start time plus 1 " .. pyro_fb_pattern.start_time + 1)
-            logger.log("core time " .. core.time())
             logger.log("Pyro->FB pattern ABANDONED: No Hot Streak for Pyroblast (GCD ended)", 1)
             pyro_fb_pattern.reset()
             return false
         else
-            logger.log(
-                "Pyro->FB pattern - Waiting for Hot Streak proc or GCD (Current GCD: " ..
-                string.format("%.2f", gcd) .. "s)",
-                3)
+            logger.log("Pyro->FB pattern - Waiting for Hot Streak proc or GCD (Current GCD: " ..
+                string.format("%.2f", gcd) .. "s)", 3)
             return true
         end
     end
