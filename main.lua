@@ -38,63 +38,84 @@ local control_panel_helper = require("common/utility/control_panel_helper")
 local PATTERN_RESET_TIME = 0.75     -- Time window for pattern reset in seconds
 ---@type number
 local COMBUSTION_PRECAST_TIME = 500 -- Milliseconds before end of Fireball cast to start Combustion
+
 -----------------------------------
 -- SPELL DATA DEFINITIONS
 -----------------------------------
+-- Spell data type definition
+---@class SpellData
+---@field id integer Spell identifier
+---@field name string Display name of the spell
+---@field priority integer Queue priority (higher = more important)
+---@field last_cast number Timestamp of last cast
+---@field cast_delay number Minimum time between cast attempts
+---@field is_off_gcd boolean Whether spell ignores global cooldown
+
+-- Default values
+local DEFAULT_PRIORITY = 1
+local DEFAULT_CAST_DELAY = 0.20
+local OFF_GCD_CAST_DELAY = 0.10
+
+-- Spell definitions
+---@type table<string, SpellData>
 local SPELL = {
+    -- Primary damage spells
     FIREBALL = {
         id = 133,
         name = "Fireball",
-        priority = 1,
+        priority = DEFAULT_PRIORITY,
         last_cast = 0,
-        cast_delay = 0.20,
+        cast_delay = DEFAULT_CAST_DELAY,
         is_off_gcd = false
-    },
-    FIRE_BLAST = {
-        id = 108853,
-        name = "Fire Blast",
-        priority = 1,
-        last_cast = 0,
-        cast_delay = 0.10,
-        is_off_gcd = true
     },
     PYROBLAST = {
         id = 11366,
         name = "Pyroblast",
-        priority = 1,
+        priority = DEFAULT_PRIORITY,
         last_cast = 0,
-        cast_delay = 0.20,
-        is_off_gcd = false
-    },
-    PHOENIX_FLAMES = {
-        id = 257541,
-        name = "Phoenix Flames",
-        priority = 1,
-        last_cast = 0,
-        cast_delay = 0.20,
+        cast_delay = DEFAULT_CAST_DELAY,
         is_off_gcd = false
     },
     SCORCH = {
         id = 2948,
         name = "Scorch",
-        priority = 1,
+        priority = DEFAULT_PRIORITY,
         last_cast = 0,
-        cast_delay = 0.20,
+        cast_delay = DEFAULT_CAST_DELAY,
         is_off_gcd = false
+    },
+
+    -- Off-GCD spells
+    FIRE_BLAST = {
+        id = 108853,
+        name = "Fire Blast",
+        priority = DEFAULT_PRIORITY,
+        last_cast = 0,
+        cast_delay = OFF_GCD_CAST_DELAY,
+        is_off_gcd = true
     },
     COMBUSTION = {
         id = 190319,
         name = "Combustion",
-        priority = 1,
+        priority = DEFAULT_PRIORITY,
         last_cast = 0,
-        cast_delay = 0.10,
+        cast_delay = OFF_GCD_CAST_DELAY,
         is_off_gcd = true
+    },
+
+    -- Cooldown spells
+    PHOENIX_FLAMES = {
+        id = 257541,
+        name = "Phoenix Flames",
+        priority = DEFAULT_PRIORITY,
+        last_cast = 0,
+        cast_delay = DEFAULT_CAST_DELAY,
+        is_off_gcd = false
     }
 }
 
------------------------------------
--- BUFF DATA DEFINITIONS
------------------------------------
+-- Important buff identifiers
+---@type table<string, number[]>
 local BUFF = {
     HOT_STREAK = enums.buff_db.HOT_STREAK,
     HEATING_UP = enums.buff_db.HEATING_UP,
@@ -103,8 +124,20 @@ local BUFF = {
 }
 
 -----------------------------------
--- UI ELEMENTS
+-- UI ELEMENTS AND LOGGING
 -----------------------------------
+---@class MenuElements
+---@field main_tree userdata Main plugin settings tree
+---@field keybinds_tree_node userdata Keybinds settings tree
+---@field enable_script_check checkbox Main toggle for enabling the script
+---@field enable_toggle keybind Hotkey for toggling the script
+---@field draw_plugin_state checkbox Toggle for UI status display
+---@field ts_custom_logic_override checkbox Toggle for target selector modifications
+---@field debug_info checkbox Toggle for showing debug information
+---@field log_level slider_int Control for logging verbosity (1-3)
+
+-- Create menu elements with default values
+---@type MenuElements
 local menu_elements = {
     main_tree = core.menu.tree_node(),
     keybinds_tree_node = core.menu.tree_node(),
@@ -119,28 +152,35 @@ local menu_elements = {
 -----------------------------------
 -- LOGGING SYSTEM
 -----------------------------------
+-- Create logger module
 local logger = {
     logs = {},
     max_logs = 10,
     level = 2 -- Default: normal logging
 }
 
+---Adds a log entry if its level is at or below the current logging level
+---@param message string The message to log
+---@param level? integer The importance level (1=critical, 2=normal, 3=verbose)
+---@return string The logged message
 function logger.log(message, level)
     level = level or 2 -- Default level: normal
 
     if level <= logger.level then
+        -- Store in log history
         table.insert(logger.logs, 1, message)
         if #logger.logs > logger.max_logs then
             table.remove(logger.logs, logger.max_logs + 1)
         end
-        core.log(message)
 
-        core.log_file(message)
+        -- Output to console/file
+        core.log(message)
     end
 
     return message
 end
 
+---Updates the logger's level from the UI setting
 function logger.update_level()
     logger.level = menu_elements.log_level:get()
 end
