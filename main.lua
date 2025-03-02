@@ -25,6 +25,7 @@ local key_helper = require("common/utility/key_helper")
 ---@type control_panel_helper
 local control_panel_helper = require("common/utility/control_panel_helper")
 
+local reset_time = .75
 -----------------------------------
 -- SPELL DATA DEFINITIONS
 -----------------------------------
@@ -139,15 +140,16 @@ local spellcasting = {
     last_cast_time = 0
 }
 
+local function setLastCast(spell)
+    local current_time = core.time()
+    spell.last_cast = current_time
+    spellcasting.last_cast = spell.name
+    spellcasting.last_cast_time = current_time
+    logger.log("CAST SUCCESS: " .. spell.name, 1)
+end
+
 function spellcasting.cast_spell(spell, target, skip_facing, skip_range)
     local current_time = core.time()
-
-    -- Check rate limiting to prevent spam
-    if current_time - spell.last_cast < spell.cast_delay then
-        logger.log("Cast rejected: " .. spell.name .. " (Rate limited)", 3)
-        return false
-    end
-
     -- Check if spell is castable
     local is_spell_castable = spell_helper:is_spell_castable(spell.id, core.object_manager.get_local_player(),
         target, skip_facing, skip_range)
@@ -155,6 +157,13 @@ function spellcasting.cast_spell(spell, target, skip_facing, skip_range)
         logger.log("Cast rejected: " .. spell.name .. " (Not castable)", 2)
         return false
     end
+    -- Check rate limiting to prevent spam
+    if current_time - spell.last_cast < spell.cast_delay then
+        logger.log("Cast rejected: " .. spell.name .. " (Rate limited)", 3)
+        return false
+    end
+
+
 
     -- Queue the spell based on whether it's off the GCD or not
     if spell.is_off_gcd then
@@ -165,10 +174,7 @@ function spellcasting.cast_spell(spell, target, skip_facing, skip_range)
             "Casting " .. spell.name)
     end
 
-    spell.last_cast = current_time
-    spellcasting.last_cast = spell.name
-    spellcasting.last_cast_time = current_time
-    logger.log("CAST SUCCESS: " .. spell.name, 1)
+    setLastCast(spell)
     return true
 end
 
@@ -355,12 +361,8 @@ function pyro_fb_pattern.execute(player, target)
         -- State: PYROBLAST_CAST
     elseif pyro_fb_pattern.state == "PYROBLAST_CAST" then
         -- Cast Pyroblast if Hot Streak is active
-        local has_hot_streak = resources.has_hot_streak(player)
-        logger.log(
-            "Pyro->FB pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " ..
-            tostring(has_hot_streak) .. ")", 3)
 
-        if has_hot_streak then
+        if gcd == 0 then
             logger.log("Pyro->FB pattern - Attempting to cast Pyroblast with Hot Streak", 2)
             if spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false) then
                 logger.log("Pyro->FB pattern COMPLETED: Full sequence executed successfully", 1)
@@ -370,7 +372,7 @@ function pyro_fb_pattern.execute(player, target)
                 logger.log("Pyro->FB pattern - Pyroblast cast FAILED, retrying", 2)
                 return true
             end
-        elseif gcd <= 0 and pyro_fb_pattern.start_time + 1 > core.time() then
+        elseif gcd <= 0 and pyro_fb_pattern.start_time + reset_time > core.time() then
             -- We should have Hot Streak by now, if not something went wrong
             logger.log("start time plus 1 " .. pyro_fb_pattern.start_time + 1)
             logger.log("core time " .. core.time())
@@ -479,7 +481,7 @@ function pyro_pf_pattern.execute(player, target)
         local pf_charges = resources.get_phoenix_flames_charges()
         logger.log("Pyro->PF pattern - Checking Phoenix Flames charges: " .. pf_charges, 3)
 
-        if pf_charges > 0 then
+        if pf_charges > 0 and gcd == 0 then
             logger.log("Pyro->PF pattern - Attempting to cast Phoenix Flames", 2)
             if spellcasting.cast_spell(SPELL.PHOENIX_FLAMES, target, false, false) then
                 pyro_pf_pattern.state = "PYROBLAST_CAST"
@@ -503,9 +505,7 @@ function pyro_pf_pattern.execute(player, target)
         logger.log(
             "Pyro->PF pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " ..
             tostring(has_hot_streak) .. ")", 3)
-
-        if has_hot_streak then
-            logger.log("Pyro->PF pattern - Attempting to cast Pyroblast with Hot Streak", 2)
+        if gcd == 0 then
             if spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false) then
                 logger.log("Pyro->PF pattern COMPLETED: Full sequence executed successfully", 1)
                 pyro_pf_pattern.reset()
@@ -514,23 +514,21 @@ function pyro_pf_pattern.execute(player, target)
                 logger.log("Pyro->PF pattern - Pyroblast cast FAILED, retrying", 2)
                 return true
             end
-        elseif gcd <= 0 and pyro_pf_pattern.start_time + 1 > core.time() then
-            -- We should have Hot Streak by now, if not something went wrong
-            logger.log("start time plus 1 " .. pyro_fb_pattern.start_time + 1)
-            logger.log("core time " .. core.time())
-            logger.log("Pyro->PF pattern ABANDONED: No Hot Streak for Pyroblast after Phoenix Flames (GCD ended)", 1)
-            pyro_pf_pattern.reset()
-            return false
-        else
-            logger.log(
-                "Pyro->PF pattern - Waiting for Hot Streak proc or GCD (Current GCD: " ..
-                string.format("%.2f", gcd) .. "s)",
-                3)
-            return true
         end
+    elseif gcd <= 0 and pyro_pf_pattern.start_time + reset_time > core.time() then
+        -- We should have Hot Streak by now, if not something went wrong
+        logger.log("start time plus 1 " .. pyro_fb_pattern.start_time + 1)
+        logger.log("core time " .. core.time())
+        logger.log("Pyro->PF pattern ABANDONED: No Hot Streak for Pyroblast after Phoenix Flames (GCD ended)", 1)
+        pyro_pf_pattern.reset()
+        return false
+    else
+        logger.log(
+            "Pyro->PF pattern - Waiting for Hot Streak proc or GCD (Current GCD: " ..
+            string.format("%.2f", gcd) .. "s)",
+            3)
+        return true
     end
-
-    return true
 end
 
 -----------------------------------
@@ -1081,6 +1079,42 @@ local function on_update()
         spellcasting.cast_spell(SPELL.FIREBALL, target, false, false)
     end
 end
+-----------------------------------
+-- SPELL CAST MONITORING
+-----------------------------------
+local function on_spell_cast(spellId)
+    local player = core.object_manager.get_local_player()
+    if not player then
+        return
+    end
+
+    -- Check if spell is Pyroblast
+    if spellId == SPELL.PYROBLAST.id then
+        logger.log("Pyroblast was cast - Resetting all active patterns", 2)
+
+        -- Reset all patterns
+        if pyro_fb_pattern.active then
+            logger.log("Resetting Pyro->FB pattern due to manual Pyroblast cast", 2)
+            pyro_fb_pattern.reset()
+        end
+
+        if pyro_pf_pattern.active then
+            logger.log("Resetting Pyro->PF pattern due to manual Pyroblast cast", 2)
+            pyro_pf_pattern.reset()
+        end
+
+        if scorch_fb_pattern.active then
+            logger.log("Resetting Scorch+FB pattern due to manual Pyroblast cast", 2)
+            scorch_fb_pattern.reset()
+        end
+
+        if combustion_opener_pattern.active then
+            logger.log("Resetting Combustion Opener pattern due to manual Pyroblast cast", 2)
+            combustion_opener_pattern.reset()
+        end
+        setLastCast(SPELL.PYROBLAST)
+    end
+end
 
 -----------------------------------
 -- REGISTER CALLBACKS
@@ -1089,3 +1123,4 @@ core.register_on_update_callback(on_update)
 core.register_on_render_callback(ui.render)
 core.register_on_render_menu_callback(ui.render_menu)
 core.register_on_render_control_panel_callback(ui.render_control_panel)
+core.register_on_legit_spell_cast_callback(on_spell_cast)
