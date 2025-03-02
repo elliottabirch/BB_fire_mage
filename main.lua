@@ -120,6 +120,8 @@ function logger.log(message, level)
             table.remove(logger.logs, logger.max_logs + 1)
         end
         core.log(message)
+
+        core.log_file(message)
     end
 
     return message
@@ -188,6 +190,8 @@ function resources.fire_blast_ready_in(seconds)
     end
 
     local remaining = math.max(0, (start_time + charge_cd - core.game_time()) / 1000)
+    logger.log("Remaining time for Fire Blast to be ready: " .. remaining)
+
     return remaining <= seconds and remaining or 999
 end
 
@@ -258,7 +262,7 @@ function pyro_fb_pattern.should_start(player)
     -- Check if we just cast Pyroblast
     if spellcasting.last_cast ~= SPELL.PYROBLAST.name then
         logger.log(
-        "Pyro->FB pattern REJECTED: Last cast was not Pyroblast (was " .. (spellcasting.last_cast or "nil") .. ")", 2)
+            "Pyro->FB pattern REJECTED: Last cast was not Pyroblast (was " .. (spellcasting.last_cast or "nil") .. ")", 2)
         return false
     end
     logger.log("Pyro->FB pattern check: Last cast WAS Pyroblast ✓", 3)
@@ -281,8 +285,8 @@ function pyro_fb_pattern.should_start(player)
     local fb_ready_time = resources.fire_blast_ready_in(gcd - 0.2)
     if fb_ready_time < gcd then
         logger.log(
-        "Pyro->FB pattern ACCEPTED: Fire Blast will be ready in " ..
-        string.format("%.2f", fb_ready_time) .. "s (before GCD ends)", 2)
+            "Pyro->FB pattern ACCEPTED: Fire Blast will be ready in " ..
+            string.format("%.2f", fb_ready_time) .. "s (before GCD ends)", 2)
         return true
     end
 
@@ -313,15 +317,15 @@ function pyro_fb_pattern.execute(player, target)
     -- Check for GCD
     local gcd = core.spell_book.get_global_cooldown()
     logger.log(
-    "Pyro->FB pattern executing - Current state: " ..
-    pyro_fb_pattern.state .. ", GCD: " .. string.format("%.2f", gcd) .. "s", 3)
+        "Pyro->FB pattern executing - Current state: " ..
+        pyro_fb_pattern.state .. ", GCD: " .. string.format("%.2f", gcd) .. "s", 3)
 
     -- State: WAITING_FOR_GCD
     if pyro_fb_pattern.state == "WAITING_FOR_GCD" then
         -- Wait until GCD is almost over
         local fb_charges = resources.get_fire_blast_charges()
-        if gcd <= 0.1 and fb_charges > 0 then
-            logger.log("Pyro->FB pattern - GCD ending, preparing Fire Blast (Fire Blast charges: " .. fb_charges .. ")",
+        if gcd > 0 and fb_charges > 0 then
+            logger.log("Pyro->FB pattern - GCD started, preparing Fire Blast (Fire Blast charges: " .. fb_charges .. ")",
                 2)
             pyro_fb_pattern.state = "FIRE_BLAST_CAST"
         elseif gcd <= 0 then
@@ -330,8 +334,8 @@ function pyro_fb_pattern.execute(player, target)
             return false
         else
             logger.log(
-            "Pyro->FB pattern - Waiting for GCD (" ..
-            string.format("%.2f", gcd) .. "s remaining, FB charges: " .. fb_charges .. ")", 3)
+                "Pyro->FB pattern - Waiting for GCD (" ..
+                string.format("%.2f", gcd) .. "s remaining, FB charges: " .. fb_charges .. ")", 3)
         end
         return true
 
@@ -353,7 +357,8 @@ function pyro_fb_pattern.execute(player, target)
         -- Cast Pyroblast if Hot Streak is active
         local has_hot_streak = resources.has_hot_streak(player)
         logger.log(
-        "Pyro->FB pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " .. tostring(has_hot_streak) .. ")", 3)
+            "Pyro->FB pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " ..
+            tostring(has_hot_streak) .. ")", 3)
 
         if has_hot_streak then
             logger.log("Pyro->FB pattern - Attempting to cast Pyroblast with Hot Streak", 2)
@@ -365,14 +370,17 @@ function pyro_fb_pattern.execute(player, target)
                 logger.log("Pyro->FB pattern - Pyroblast cast FAILED, retrying", 2)
                 return true
             end
-        elseif gcd <= 0 then
+        elseif gcd <= 0 and pyro_fb_pattern.start_time + 1 > core.time() then
             -- We should have Hot Streak by now, if not something went wrong
+            logger.log("start time plus 1 " .. pyro_fb_pattern.start_time + 1)
+            logger.log("core time " .. core.time())
             logger.log("Pyro->FB pattern ABANDONED: No Hot Streak for Pyroblast (GCD ended)", 1)
             pyro_fb_pattern.reset()
             return false
         else
             logger.log(
-            "Pyro->FB pattern - Waiting for Hot Streak proc or GCD (Current GCD: " .. string.format("%.2f", gcd) .. "s)",
+                "Pyro->FB pattern - Waiting for Hot Streak proc or GCD (Current GCD: " ..
+                string.format("%.2f", gcd) .. "s)",
                 3)
             return true
         end
@@ -403,18 +411,18 @@ function pyro_pf_pattern.should_start(player)
     -- Check if we just cast Pyroblast
     if spellcasting.last_cast ~= SPELL.PYROBLAST.name then
         logger.log(
-        "Pyro->PF pattern REJECTED: Last cast was not Pyroblast (was " .. (spellcasting.last_cast or "nil") .. ")", 2)
+            "Pyro->PF pattern REJECTED: Last cast was not Pyroblast (was " .. (spellcasting.last_cast or "nil") .. ")", 2)
         return false
     end
     logger.log("Pyro->PF pattern check: Last cast WAS Pyroblast ✓", 3)
 
     -- Check if GCD is active
     local gcd = core.spell_book.get_global_cooldown()
-    if gcd <= 0 then
-        logger.log("Pyro->PF pattern REJECTED: Global cooldown not active (GCD: " .. gcd .. ")", 2)
+    if gcd > 0 then
+        logger.log("Pyro->PF pattern REJECTED: Global cooldown is active (GCD: " .. gcd .. ")", 2)
         return false
     end
-    logger.log("Pyro->PF pattern check: GCD is active (" .. string.format("%.2f", gcd) .. "s) ✓", 3)
+    logger.log("Pyro->PF pattern check: GCD is not active (" .. string.format("%.2f", gcd) .. "s) ✓", 3)
 
     -- Check if we have Phoenix Flames charge
     local pf_charges = resources.get_phoenix_flames_charges()
@@ -427,8 +435,8 @@ function pyro_pf_pattern.should_start(player)
     local pf_ready_time = resources.phoenix_flames_ready_in(gcd)
     if pf_ready_time < gcd then
         logger.log(
-        "Pyro->PF pattern ACCEPTED: Phoenix Flames will be ready in " ..
-        string.format("%.2f", pf_ready_time) .. "s (before GCD ends)", 2)
+            "Pyro->PF pattern ACCEPTED: Phoenix Flames will be ready in " ..
+            string.format("%.2f", pf_ready_time) .. "s (before GCD ends)", 2)
         return true
     end
 
@@ -438,7 +446,7 @@ end
 
 function pyro_pf_pattern.start()
     pyro_pf_pattern.active = true
-    pyro_pf_pattern.state = "WAITING_FOR_GCD"
+    pyro_pf_pattern.state = "PF_CAST"
     pyro_pf_pattern.start_time = core.time()
     logger.log("Pyro->PF pattern STARTED - State: WAITING_FOR_GCD", 1)
 end
@@ -459,22 +467,14 @@ function pyro_pf_pattern.execute(player, target)
     -- Check for GCD
     local gcd = core.spell_book.get_global_cooldown()
     logger.log(
-    "Pyro->PF pattern executing - Current state: " ..
-    pyro_pf_pattern.state .. ", GCD: " .. string.format("%.2f", gcd) .. "s", 3)
+        "Pyro->PF pattern executing - Current state: " ..
+        pyro_pf_pattern.state .. ", GCD: " .. string.format("%.2f", gcd) .. "s", 3)
 
     -- State: WAITING_FOR_GCD
-    if pyro_pf_pattern.state == "WAITING_FOR_GCD" then
-        -- Wait until GCD is almost over
-        if gcd < 0.3 then
-            logger.log("Pyro->PF pattern - GCD ending, preparing Phoenix Flames", 2)
-            pyro_pf_pattern.state = "PF_CAST"
-        else
-            logger.log("Pyro->PF pattern - Waiting for GCD (" .. string.format("%.2f", gcd) .. "s remaining)", 3)
-        end
-        return true
 
-        -- State: PHOENIX_FLAMES_CAST
-    elseif pyro_pf_pattern.state == "PF_CAST" then
+
+    -- State: PHOENIX_FLAMES_CAST
+    if pyro_pf_pattern.state == "PF_CAST" then
         -- Cast Phoenix Flames
         local pf_charges = resources.get_phoenix_flames_charges()
         logger.log("Pyro->PF pattern - Checking Phoenix Flames charges: " .. pf_charges, 3)
@@ -501,7 +501,8 @@ function pyro_pf_pattern.execute(player, target)
         -- Cast Pyroblast if Hot Streak is active
         local has_hot_streak = resources.has_hot_streak(player)
         logger.log(
-        "Pyro->PF pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " .. tostring(has_hot_streak) .. ")", 3)
+            "Pyro->PF pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " ..
+            tostring(has_hot_streak) .. ")", 3)
 
         if has_hot_streak then
             logger.log("Pyro->PF pattern - Attempting to cast Pyroblast with Hot Streak", 2)
@@ -513,14 +514,17 @@ function pyro_pf_pattern.execute(player, target)
                 logger.log("Pyro->PF pattern - Pyroblast cast FAILED, retrying", 2)
                 return true
             end
-        elseif gcd <= 0 then
+        elseif gcd <= 0 and pyro_pf_pattern.start_time + 1 > core.time() then
             -- We should have Hot Streak by now, if not something went wrong
+            logger.log("start time plus 1 " .. pyro_fb_pattern.start_time + 1)
+            logger.log("core time " .. core.time())
             logger.log("Pyro->PF pattern ABANDONED: No Hot Streak for Pyroblast after Phoenix Flames (GCD ended)", 1)
             pyro_pf_pattern.reset()
             return false
         else
             logger.log(
-            "Pyro->PF pattern - Waiting for Hot Streak proc or GCD (Current GCD: " .. string.format("%.2f", gcd) .. "s)",
+                "Pyro->PF pattern - Waiting for Hot Streak proc or GCD (Current GCD: " ..
+                string.format("%.2f", gcd) .. "s)",
                 3)
             return true
         end
@@ -551,10 +555,18 @@ function scorch_fb_pattern.should_start(player)
     -- Check if we just cast Pyroblast
     if spellcasting.last_cast ~= SPELL.PYROBLAST.name then
         logger.log(
-        "Scorch+FB pattern REJECTED: Last cast was not Pyroblast (was " .. (spellcasting.last_cast or "nil") .. ")", 2)
+            "Scorch+FB pattern REJECTED: Last cast was not Pyroblast (was " .. (spellcasting.last_cast or "nil") .. ")",
+            2)
         return false
     end
     logger.log("Scorch+FB pattern check: Last cast WAS Pyroblast ✓", 3)
+
+    local gcd = core.spell_book.get_global_cooldown()
+    if gcd > 0 then
+        logger.log("scorch -> fb pattern REJECTED: Global cooldown is active (GCD: " .. gcd .. ")", 2)
+        return false
+    end
+    logger.log("scorch -> fb pattern check: GCD is not active (" .. string.format("%.2f", gcd) .. "s) ✓", 3)
 
     -- Check if we have no Fire Blast charges
     local fb_charges = resources.get_fire_blast_charges()
@@ -571,16 +583,16 @@ function scorch_fb_pattern.should_start(player)
         return false
     end
     logger.log(
-    "Scorch+FB pattern check: Combustion is active (" ..
-    string.format("%.2f", combustion_remaining / 1000) .. "s remaining) ✓", 3)
+        "Scorch+FB pattern check: Combustion is active (" ..
+        string.format("%.2f", combustion_remaining / 1000) .. "s remaining) ✓", 3)
 
     -- Calculate if Fire Blast will be ready by the end of Scorch cast
     local scorch_cast_time = core.spell_book.get_spell_cast_time(SPELL.SCORCH.id)
     local fb_ready_in = resources.fire_blast_ready_in(scorch_cast_time - 0.1)
     if fb_ready_in >= scorch_cast_time then
         logger.log(
-        "Scorch+FB pattern REJECTED: Fire Blast won't be ready in time (Ready in: " ..
-        string.format("%.2f", fb_ready_in) .. "s, Cast time: " .. string.format("%.2f", scorch_cast_time) .. "s)", 2)
+            "Scorch+FB pattern REJECTED: Fire Blast won't be ready in time (Ready in: " ..
+            string.format("%.2f", fb_ready_in) .. "s, Cast time: " .. string.format("%.2f", scorch_cast_time) .. "s)", 2)
         return false
     end
     logger.log("Scorch+FB pattern check: Fire Blast will be ready by cast end ✓", 3)
@@ -589,9 +601,9 @@ function scorch_fb_pattern.should_start(player)
     local combustion_remaining_sec = combustion_remaining / 1000
     if (scorch_cast_time + 0.1) >= combustion_remaining_sec then
         logger.log(
-        "Scorch+FB pattern REJECTED: Not enough Combustion time left (Combustion: " ..
-        string.format("%.2f", combustion_remaining_sec) ..
-        "s, Required: " .. string.format("%.2f", scorch_cast_time + 0.1) .. "s)", 2)
+            "Scorch+FB pattern REJECTED: Not enough Combustion time left (Combustion: " ..
+            string.format("%.2f", combustion_remaining_sec) ..
+            "s, Required: " .. string.format("%.2f", scorch_cast_time + 0.1) .. "s)", 2)
         return false
     end
 
@@ -639,52 +651,24 @@ function scorch_fb_pattern.execute(player, target)
         -- Wait for the right moment to cast Fire Blast
         local cast_end_time = player:get_active_spell_cast_end_time()
         local current_time = core.game_time()
-
+        local remaining_cast_time = (cast_end_time - current_time) / 1000
         -- Cast Fire Blast near the end of Scorch cast
-        if cast_end_time > 0 and resources.get_fire_blast_charges() > 0 then
-            local remaining_cast_time = (cast_end_time - current_time) / 1000
+        if remaining_cast_time > 200 and resources.get_fire_blast_charges() > 0 then
             local scorch_cast_time = core.spell_book.get_spell_cast_time(SPELL.SCORCH.id)
-
-            -- Fire Blast at about 70% through Scorch cast
-            if remaining_cast_time < (scorch_cast_time * 0.3) then
-                logger.log(
+            logger.log(
                 "Scorch+FB pattern - Attempting to cast Fire Blast during Scorch (Remaining cast: " ..
                 string.format("%.2f", remaining_cast_time) .. "s)", 2)
-                if spellcasting.cast_spell(SPELL.FIRE_BLAST, target, false, false) then
-                    scorch_fb_pattern.state = "PYROBLAST_CAST"
-                    logger.log("Scorch+FB pattern - Fire Blast cast successful, transitioning to PYROBLAST_CAST state", 2)
-                    return true
-                end
-            else
-                logger.log(
-                "Scorch+FB pattern - Waiting to cast Fire Blast (Remaining cast: " ..
-                string.format("%.2f", remaining_cast_time) ..
-                "s, Target: " .. string.format("%.2f", scorch_cast_time * 0.3) .. "s)", 3)
+            if spellcasting.cast_spell(SPELL.FIRE_BLAST, target, false, false) then
+                scorch_fb_pattern.state = "PYROBLAST_CAST"
+                logger.log("Scorch+FB pattern - Fire Blast cast successful, transitioning to PYROBLAST_CAST state", 2)
+                return true
             end
         elseif cast_end_time == 0 then
             -- Scorch cast finished without casting Fire Blast - check if we got Hot Streak anyway
-            if resources.has_hot_streak(player) then
-                scorch_fb_pattern.state = "PYROBLAST_CAST"
-                logger.log(
-                "Scorch+FB pattern - Scorch finished, Hot Streak already active, transitioning to PYROBLAST_CAST state",
-                    2)
-            else
-                -- Cast Fire Blast now if we have charges
-                if resources.get_fire_blast_charges() > 0 then
-                    logger.log("Scorch+FB pattern - Attempting to cast Fire Blast after Scorch", 2)
-                    if spellcasting.cast_spell(SPELL.FIRE_BLAST, target, false, false) then
-                        scorch_fb_pattern.state = "PYROBLAST_CAST"
-                        logger.log(
-                        "Scorch+FB pattern - Fire Blast cast successful after Scorch, transitioning to PYROBLAST_CAST state",
-                            2)
-                        return true
-                    end
-                else
-                    logger.log("Scorch+FB pattern ABANDONED: No Fire Blast charges after Scorch", 1)
-                    scorch_fb_pattern.reset()
-                    return false
-                end
-            end
+
+            logger.log("Scorch+FB pattern ABANDONED: No Fire Blast charges after Scorch", 1)
+            scorch_fb_pattern.reset()
+            return false
         end
         return true
 
@@ -693,7 +677,8 @@ function scorch_fb_pattern.execute(player, target)
         -- Cast Pyroblast if Hot Streak is active
         local has_hot_streak = resources.has_hot_streak(player)
         logger.log(
-        "Scorch+FB pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " .. tostring(has_hot_streak) .. ")",
+            "Scorch+FB pattern - Checking for Hot Streak before Pyroblast (Hot Streak: " ..
+            tostring(has_hot_streak) .. ")",
             3)
 
         if has_hot_streak then
@@ -710,8 +695,137 @@ function scorch_fb_pattern.execute(player, target)
             return false
         else
             logger.log(
-            "Scorch+FB pattern - Waiting for Hot Streak or GCD (Current GCD: " ..
-            string.format("%.2f", core.spell_book.get_global_cooldown()) .. "s)", 3)
+                "Scorch+FB pattern - Waiting for Hot Streak or GCD (Current GCD: " ..
+                string.format("%.2f", core.spell_book.get_global_cooldown()) .. "s)", 3)
+        end
+        return true
+    end
+
+    return true
+end
+
+-----------------------------------
+-- COMBUSTION OPENER PATTERN
+-----------------------------------
+local combustion_opener_pattern = {
+    active = false,
+    state = "NONE", -- NONE, WAITING_FOR_CURRENT_CAST, FIRST_PYRO, SECOND_PYRO
+    start_time = 0,
+    has_activated_this_combustion = false
+}
+
+function combustion_opener_pattern.should_start(player)
+    logger.log("Evaluating Combustion Opener pattern conditions:", 3)
+
+    -- Don't start if other patterns are active
+    if pyro_fb_pattern.active or pyro_pf_pattern.active or scorch_fb_pattern.active then
+        logger.log("Combustion Opener REJECTED: Another pattern is already active", 2)
+        return false
+    end
+
+    if combustion_opener_pattern.has_activated_this_combustion then
+        logger.log("Combustion Opener REJECTED: opener already activated this combustion", 2)
+        return false
+    end
+    -- Check if Combustion is active and was just cast (< 0.75s)
+    local combustion_remaining = resources.get_combustion_remaining(player)
+    local combustion_duration = 10000 -- 10 seconds in milliseconds
+    local combustion_active_time = combustion_duration - combustion_remaining
+
+    if combustion_remaining <= 0 then
+        logger.log("Combustion Opener REJECTED: Combustion not active", 2)
+        return false
+    end
+
+    if combustion_active_time > 750 then -- 0.75 seconds in milliseconds
+        logger.log(
+            "Combustion Opener REJECTED: Combustion active for too long (" ..
+            string.format("%.2f", combustion_active_time / 1000) .. "s)", 2)
+        return false
+    end
+
+    logger.log(
+        "Combustion Opener ACCEPTED: Combustion just started (" ..
+        string.format("%.2f", combustion_active_time / 1000) .. "s ago)", 1)
+    return true
+end
+
+function combustion_opener_pattern.start()
+    combustion_opener_pattern.active = true
+    combustion_opener_pattern.state = "WAITING_FOR_CURRENT_CAST"
+    combustion_opener_pattern.start_time = core.time()
+    combustion_opener_pattern.has_activated_this_combustion = true
+    logger.log("Combustion Opener STARTED - State: WAITING_FOR_CURRENT_CAST", 1)
+end
+
+function combustion_opener_pattern.reset()
+    local prev_state = combustion_opener_pattern.state
+    combustion_opener_pattern.active = false
+    combustion_opener_pattern.state = "NONE"
+    combustion_opener_pattern.start_time = 0
+    logger.log("Combustion Opener RESET (from " .. prev_state .. " state)", 1)
+end
+
+function combustion_opener_pattern.execute(player, target)
+    if not combustion_opener_pattern.active then
+        return false
+    end
+
+    logger.log("Combustion Opener executing - Current state: " .. combustion_opener_pattern.state, 3)
+
+    -- State: WAITING_FOR_CURRENT_CAST
+    if combustion_opener_pattern.state == "WAITING_FOR_CURRENT_CAST" then
+        -- Wait until current cast is finished
+        local cast_end_time = player:get_active_spell_cast_end_time()
+        local current_time = core.game_time()
+
+        if cast_end_time > 0 then
+            logger.log(
+                "Combustion Opener - Waiting for current cast to finish (" ..
+                string.format("%.2f", (cast_end_time - current_time) / 1000) .. "s remaining)", 3)
+            return true
+        end
+
+        -- Also wait for GCD if needed
+        local gcd = core.spell_book.get_global_cooldown()
+        if gcd > 0.1 then
+            logger.log("Combustion Opener - Waiting for GCD (" .. string.format("%.2f", gcd) .. "s remaining)", 3)
+            return true
+        end
+
+        -- Ready to cast first Pyroblast
+        combustion_opener_pattern.state = "FIRST_PYRO"
+        logger.log("Combustion Opener - Current cast finished, transitioning to FIRST_PYRO state", 2)
+        return true
+
+        -- State: FIRST_PYRO
+    elseif combustion_opener_pattern.state == "FIRST_PYRO" then
+        logger.log("Combustion Opener - Attempting to cast first Pyroblast", 2)
+        if spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false) then
+            combustion_opener_pattern.state = "SECOND_PYRO"
+            logger.log("Combustion Opener - First Pyroblast cast successful, transitioning to SECOND_PYRO state", 2)
+            return true
+        end
+        return true
+
+        -- State: SECOND_PYRO
+    elseif combustion_opener_pattern.state == "SECOND_PYRO" then
+        -- Also wait for GCD if needed
+        local gcd = core.spell_book.get_global_cooldown()
+        if gcd > 0.1 then
+            logger.log(
+                "Combustion Opener - Waiting for GCD after first Pyroblast (" ..
+                string.format("%.2f", gcd) .. "s remaining)",
+                3)
+            return true
+        end
+
+        -- Cast second Pyroblast
+        logger.log("Combustion Opener - Attempting to cast second Pyroblast", 2)
+        if spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false) then
+            logger.log("Combustion Opener COMPLETED: Both Pyroblasts cast successfully", 1)
+            combustion_opener_pattern.reset()
+            return true
         end
         return true
     end
@@ -858,11 +972,13 @@ end
 -- MAIN EXECUTION
 -----------------------------------
 local function isAnyPatternActive()
-    return pyro_fb_pattern.active or pyro_pf_pattern.active or scorch_fb_pattern.active
+    return pyro_fb_pattern.active or pyro_pf_pattern.active or scorch_fb_pattern.active or
+        combustion_opener_pattern.active
 end
 
 local function on_update()
     -- Update logger level
+
     logger.update_level()
 
     -- Update control panel
@@ -895,7 +1011,8 @@ local function on_update()
     -- Don't cast during another cast
     local cast_end_time = player:get_active_spell_cast_end_time()
     if cast_end_time > core.game_time() then
-        logger.log("Skipping: Player is casting (time remaining: " .. ((cast_end_time - core.game_time()) / 1000) .. "s)",
+        logger.log(
+            "Skipping: Player is casting (time remaining: " .. ((cast_end_time - core.game_time()) / 1000) .. "s)",
             3)
         return
     end
@@ -920,7 +1037,10 @@ local function on_update()
         if not isAnyPatternActive() then
             logger.log("No pattern active, checking for pattern to start", 3)
 
-            if pyro_fb_pattern.should_start(player) then
+            -- Check for combustion opener pattern first
+            if combustion_opener_pattern.should_start(player) then
+                combustion_opener_pattern.start()
+            elseif pyro_fb_pattern.should_start(player) then
                 pyro_fb_pattern.start()
             elseif pyro_pf_pattern.should_start(player) then
                 pyro_pf_pattern.start()
@@ -930,6 +1050,10 @@ local function on_update()
         end
 
         -- Execute patterns if active
+        if combustion_opener_pattern.active and combustion_opener_pattern.execute(player, target) then
+            return
+        end
+
         if pyro_fb_pattern.active and pyro_fb_pattern.execute(player, target) then
             return
         end
@@ -943,31 +1067,19 @@ local function on_update()
         end
     else
         logger.log("Combustion not active, using standard rotation", 3)
-    end
-
-    -- Check for Hot Streak
-    if resources.has_hot_streak(player) then
-        logger.log("Standard rotation: Hot Streak detected, casting Pyroblast", 2)
-        spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false)
-        return
-    end
-
-    -- Check for Heating Up (Hyperthermia)
-    if resources.has_heating_up(player) then
-        logger.log("Standard rotation: Heating Up detected, attempting to proc Hot Streak", 2)
-
-        -- If we have Fire Blast, use it to convert Heating Up to Hot Streak
-        if resources.get_fire_blast_charges() > 0 then
-            logger.log("Standard rotation: Using Fire Blast to convert Heating Up to Hot Streak", 2)
-            if spellcasting.cast_spell(SPELL.FIRE_BLAST, target, false, false) then
-                return
-            end
+        -- Check for Hot Streak
+        if combustion_opener_pattern.has_activated_this_combustion then
+            combustion_opener_pattern.has_activated_this_combustion = false
         end
+        if resources.has_hot_streak(player) or resources.has_hyperthermia(player) then
+            logger.log("Standard rotation: Hot Streak or Hyperthermia detected, casting Pyroblast", 3)
+            spellcasting.cast_spell(SPELL.PYROBLAST, target, false, false)
+            return
+        end
+        -- Default to Fireball
+        logger.log("Standard rotation: Casting Fireball", 3)
+        spellcasting.cast_spell(SPELL.FIREBALL, target, false, false)
     end
-
-    -- Default to Fireball
-    logger.log("Standard rotation: Casting Fireball", 3)
-    spellcasting.cast_spell(SPELL.FIREBALL, target, false, false)
 end
 
 -----------------------------------
