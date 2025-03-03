@@ -28,15 +28,13 @@ CombustionOpenerPattern.has_activated_this_combustion = false
 function CombustionOpenerPattern:should_start(player, patterns_active)
     self:log("Evaluating conditions:", 3)
 
-    -- Don't start if other patterns are active
-    if patterns_active.pyro_fb or patterns_active.pyro_pf or patterns_active.scorch_fb then
-        self:log("REJECTED: Another pattern is already active", 2)
-        return false
-    end
-
     if self.has_activated_this_combustion then
         self:log("REJECTED: opener already activated this combustion", 2)
         return false
+    end
+
+    if spellcasting.last_cast ~= spell_data.SPELL.FIREBALL.name then
+        self:log("REJECTED: last cast was not Fireball", 2)
     end
 
     -- Check if we have enough Fire Blast charges
@@ -61,7 +59,7 @@ function CombustionOpenerPattern:should_start(player, patterns_active)
     local combustion_cd = core.spell_book.get_spell_cooldown(spell_data.SPELL.COMBUSTION.id)
 
     self:log("Combustion CD: " .. combustion_cd, 3)
-    if combustion_cd > 0.5 then
+    if combustion_cd > ((remaining_cast_time - 500) / 1000) then
         self:log("REJECTED: combustion on cd", 2)
         return false
     end
@@ -114,8 +112,9 @@ function CombustionOpenerPattern:execute(player, target)
         local remaining_cast_time = (cast_end_time - current_time)
 
         if remaining_cast_time < config.combust_precast_time then
-            self:log("Fireball cast time < 300ms, casting Combustion", 2)
-            self.state = self.STATES.COMBUSTION_CAST
+            self:log("Fireball cast time < 300ms, attempting to cast Combustion", 2)
+            spellcasting:cast_spell(spell_data.SPELL.COMBUSTION, target, false, false)
+            -- No state change here - will be handled by on_spell_cast
             return true
         else
             self:log("Waiting for Fireball cast to get to correct timing (remaining: " ..
@@ -123,41 +122,18 @@ function CombustionOpenerPattern:execute(player, target)
             return true
         end
 
-        -- State: COMBUSTION_CAST
-    elseif self.state == self.STATES.COMBUSTION_CAST then
-        self:log("Attempting to cast Combustion", 2)
-        if spellcasting:cast_spell(spell_data.SPELL.COMBUSTION, target, false, false) then
-            self.has_activated_this_combustion = true
-
-            if resources:has_hot_streak(player) then
-                self.state = self.STATES.FIRST_PYRO
-                self:log("Combustion cast successful, Hot Streak active, skipping Fire Blast", 2)
-            else
-                self.state = self.STATES.FIRE_BLAST_CAST
-                self:log("Combustion cast successful, transitioning to FIRE_BLAST_CAST state", 2)
-            end
-            return true
-        end
-        return true
-
         -- State: FIRE_BLAST_CAST
     elseif self.state == self.STATES.FIRE_BLAST_CAST then
-        self:log("Attempting to cast Fire Blast to get Hot Streak", 2)
-        if spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false) then
-            self.state = self.STATES.FIRST_PYRO
-            self:log("Fire Blast cast successful, transitioning to FIRST_PYRO state", 2)
-            return true
-        end
+        self:log("Attempting to cast Fire Blast", 2)
+        spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false)
+        -- No state change here - will be handled by on_spell_cast
         return true
 
         -- State: FIRST_PYRO
     elseif self.state == self.STATES.FIRST_PYRO then
         self:log("Attempting to cast first Pyroblast", 2)
-        if spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false) then
-            self.state = self.STATES.SECOND_PYRO
-            self:log("First Pyroblast cast successful, transitioning to SECOND_PYRO state", 2)
-            return true
-        end
+        spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false)
+        -- No state change here - will be handled by on_spell_cast
         return true
 
         -- State: SECOND_PYRO
@@ -170,15 +146,59 @@ function CombustionOpenerPattern:execute(player, target)
         end
 
         self:log("Attempting to cast second Pyroblast", 2)
-        if spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false) then
-            self:log("COMPLETED: Both Pyroblasts cast successfully", 1)
-            self:reset()
-            return true
-        end
+        spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false)
+        -- No state change here - will be handled by on_spell_cast
         return true
     end
 
     return true
+end
+
+---Handles spell cast events to update pattern state
+---@param spell_id number The ID of the spell that was cast
+function CombustionOpenerPattern:on_spell_cast(spell_id)
+    if not self.active then
+        return false
+    end
+
+    self:log("Processing spell cast: " .. spell_id, 3)
+
+    -- Track state transitions based on spell casts
+    if spell_id == spell_data.SPELL.COMBUSTION.id then
+        self:log("Combustion cast detected", 2)
+        if self.state == self.STATES.WAITING_FOR_CAST then
+            self.has_activated_this_combustion = true
+            self.state = self.STATES.FIRE_BLAST_CAST
+            self:log("State advanced to FIRE_BLAST_CAST after Combustion cast", 2)
+            return true
+        end
+    elseif spell_id == spell_data.SPELL.FIRE_BLAST.id then
+        self:log("Fire Blast cast detected", 2)
+        if self.state == self.STATES.FIRE_BLAST_CAST then
+            self.state = self.STATES.FIRST_PYRO
+            self:log("State advanced to FIRST_PYRO after Fire Blast cast", 2)
+            return true
+        end
+    elseif spell_id == spell_data.SPELL.PYROBLAST.id then
+        self:log("Pyroblast cast detected", 2)
+        if self.state == self.STATES.FIRST_PYRO then
+            self.state = self.STATES.SECOND_PYRO
+            self:log("State advanced to SECOND_PYRO after first Pyroblast cast", 2)
+            return true
+        elseif self.state == self.STATES.SECOND_PYRO then
+            self:log("COMPLETED: Second Pyroblast cast detected, pattern complete", 1)
+            self:reset()
+            return true
+        elseif self.state == self.STATES.WAITING_FOR_CAST or
+            self.state == self.STATES.COMBUSTION_CAST or
+            self.state == self.STATES.FIRE_BLAST_CAST then
+            self:log("Unexpected Pyroblast cast, resetting pattern", 2)
+            self:reset()
+            return true
+        end
+    end
+
+    return false
 end
 
 return CombustionOpenerPattern

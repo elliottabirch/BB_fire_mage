@@ -82,9 +82,8 @@ local function on_update()
     local cast_end_time = player:get_active_spell_cast_end_time()
     local active_spell_id = player:get_active_spell_id()
 
-    if cast_end_time > core.game_time() and active_spell_id == spell_data.SPELL.SCORCH.id then
-        logger:log("Skipping: Player is casting (time remaining: " ..
-            ((cast_end_time - core.game_time()) / 1000) .. "s)", 3)
+    if cast_end_time > core.game_time() and active_spell_id == spell_data.SPELL.PYROBLAST.id then
+        core.input.jump()
         return
     end
 
@@ -172,7 +171,13 @@ local function on_update()
         end
 
         if not player:is_casting_spell() then
-            if not resources:has_heating_up(player) and resources:get_phoenix_flames_charges() == 2 then
+            logger:log("Not casting, checking next in standard rotation ", 3)
+            local last_cast = spellcasting.last_cast or "nil"
+            logger:log("Not casting, checking next in standard rotation LAST SPELL CAST: " .. last_cast, 3)
+            logger:log(
+                "Not casting, checking next in standard rotation PF CHARGES: " .. resources:get_phoenix_flames_charges(),
+                3)
+            if spellcasting.last_cast == spell_data.SPELL.FIREBALL.name and not resources:has_heating_up(player) and resources:get_phoenix_flames_charges() == 2 then
                 logger:log("Standard rotation: using pf charge", 3)
                 spellcasting:cast_spell(spell_data.SPELL.PHOENIX_FLAMES, target, false, false)
             else
@@ -188,18 +193,20 @@ end
 -- SPELL CAST MONITORING
 -----------------------------------
 ---@param spell_id number
-local function on_spell_cast(spell_id)
+local function on_spell_cast(data)
     local player = core.object_manager.get_local_player()
     if not player then
         return
     end
 
-    -- Let the pattern manager handle spell casts
-    pattern_manager:handle_spell_cast(spell_id)
-
-    -- Additional spell handling if needed
-    if spell_id == spell_data.SPELL.PYROBLAST.id then
-        spellcasting:set_last_cast(spell_data.SPELL.PYROBLAST)
+    if type(data) == "number" then
+        logger.log(logger, "ACTUAL CAST DETECTED: " .. core.spell_book.get_spell_name(data.spell_id), 2)
+        pattern_manager:handle_spell_cast(data)
+        return
+    end
+    if data.caster == player then
+        logger.log(logger, "ACTUAL CAST DETECTED: " .. core.spell_book.get_spell_name(data.spell_id), 2)
+        pattern_manager:handle_spell_cast(data.spell_id)
     end
 end
 
@@ -220,4 +227,4 @@ core.register_on_update_callback(on_update)
 core.register_on_render_callback(on_render)
 core.register_on_render_menu_callback(ui_renderer.render_menu)
 core.register_on_render_control_panel_callback(ui_renderer.render_control_panel)
-core.register_on_legit_spell_cast_callback(on_spell_cast)
+core.register_on_spell_cast_callback(on_spell_cast)

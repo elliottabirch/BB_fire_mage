@@ -16,7 +16,7 @@ function Spellcasting:set_last_cast(spell)
     spell.last_cast = current_time
     self.last_cast = spell.name
     self.last_cast_time = current_time
-    logger:log("CAST SUCCESS: " .. spell.name, 1)
+    logger:log("LAST SPELL CAST SET TO: " .. spell.name, 1)
 end
 
 ---@param spell table
@@ -38,7 +38,7 @@ function Spellcasting:cast_spell(spell, target, skip_facing, skip_range)
     end
 
     -- Check rate limiting to prevent spam
-    if current_time - spell.last_cast < spell.cast_delay then
+    if current_time - spell.last_attempt < spell.cast_delay then
         logger:log("Cast rejected: " .. spell.name .. " (Rate limited)", 3)
         return false
     end
@@ -48,13 +48,13 @@ function Spellcasting:cast_spell(spell, target, skip_facing, skip_range)
         spell_queue:queue_spell_target_fast(
             spell.id, target, spell.priority, "Casting " .. spell.name
         )
+        spell.last_attempt = current_time
     else
         spell_queue:queue_spell_target(
             spell.id, target, spell.priority, "Casting " .. spell.name
         )
+        spell.last_attempt = current_time
     end
-
-    self:set_last_cast(spell)
     return true
 end
 

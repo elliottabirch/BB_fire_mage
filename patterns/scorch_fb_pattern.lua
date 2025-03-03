@@ -24,13 +24,6 @@ ScorchFireBlastPattern.state = ScorchFireBlastPattern.STATES.NONE
 function ScorchFireBlastPattern:should_start(player, patterns_active)
     self:log("Evaluating conditions:", 3)
 
-    -- Don't start if other patterns are active
-    if patterns_active.pyro_fb or patterns_active.pyro_pf then
-        self:log("REJECTED: Another pattern is already active", 2)
-        return false
-    end
-    self:log("Check: No other patterns active ✓", 3)
-
     -- Check if we just cast Pyroblast
     if spellcasting.last_cast ~= spell_data.SPELL.PYROBLAST.name then
         self:log("REJECTED: Last cast was not Pyroblast (was " .. (spellcasting.last_cast or "nil") .. ")", 2)
@@ -55,11 +48,6 @@ function ScorchFireBlastPattern:should_start(player, patterns_active)
 
     -- Check if Combustion is active
     local combustion_remaining = resources:get_combustion_remaining(player)
-    if combustion_remaining <= 0 then
-        self:log("REJECTED: Combustion not active", 2)
-        return false
-    end
-    self:log("Check: Combustion is active (" .. string.format("%.2f", combustion_remaining / 1000) .. "s remaining) ✓", 3)
 
     -- Calculate if Fire Blast will be ready by the end of Scorch cast
     local scorch_cast_time = core.spell_book.get_spell_cast_time(spell_data.SPELL.SCORCH.id)
@@ -84,6 +72,59 @@ function ScorchFireBlastPattern:start()
     self:log("STARTED - State: " .. self.state, 1)
 end
 
+function ScorchFireBlastPattern:reset()
+    local prev_state = self.state
+    self.active = false
+    self.state = self.STATES.NONE
+    self.start_time = 0
+    self:log("RESET (from " .. prev_state .. " state)", 1)
+end
+
+---@param spell_id number
+---@return boolean
+function ScorchFireBlastPattern:on_spell_cast(spell_id)
+    if not self.active then
+        return false
+    end
+
+    self:log("Processing spell cast: " .. spell_id, 3)
+
+    -- Scorch was cast
+    if spell_id == spell_data.SPELL.SCORCH.id then
+        if self.state == self.STATES.SCORCH_CAST then
+            self:log("Scorch cast detected - transitioning to FIRE_BLAST_CAST state", 2)
+            self.state = self.STATES.FIRE_BLAST_CAST
+            return true
+        end
+
+        -- Fire Blast was cast
+    elseif spell_id == spell_data.SPELL.FIRE_BLAST.id then
+        if self.state == self.STATES.FIRE_BLAST_CAST then
+            self:log("Fire Blast cast detected - transitioning to FIRST_PYROBLAST_CAST state", 2)
+            self.state = self.STATES.FIRST_PYROBLAST_CAST
+            return true
+        end
+
+        -- Pyroblast was cast
+    elseif spell_id == spell_data.SPELL.PYROBLAST.id then
+        if self.state == self.STATES.FIRST_PYROBLAST_CAST then
+            self:log("First Pyroblast cast detected - transitioning to SECOND_PYROBLAST_CAST state", 2)
+            self.state = self.STATES.SECOND_PYROBLAST_CAST
+            return true
+        elseif self.state == self.STATES.SECOND_PYROBLAST_CAST then
+            self:log("Second Pyroblast cast detected - pattern complete", 1)
+            self:reset()
+            return true
+        else
+            self:log("Unexpected Pyroblast cast in " .. self.state .. " state - resetting pattern", 2)
+            self:reset()
+            return true
+        end
+    end
+
+    return false
+end
+
 ---@param player game_object
 ---@param target game_object
 ---@return boolean
@@ -97,13 +138,8 @@ function ScorchFireBlastPattern:execute(player, target)
     -- State: SCORCH_CAST
     if self.state == self.STATES.SCORCH_CAST then
         self:log("Attempting to cast Scorch", 2)
-        if spellcasting:cast_spell(spell_data.SPELL.SCORCH, target, false, false) then
-            self.state = self.STATES.FIRE_BLAST_CAST
-            self:log("Scorch cast successful, transitioning to FIRE_BLAST_CAST state", 2)
-            return true
-        else
-            self:log("Scorch cast FAILED, retrying", 2)
-        end
+        spellcasting:cast_spell(spell_data.SPELL.SCORCH, target, false, false)
+        -- No state transition here - handled by on_spell_cast
         return true
 
         -- State: FIRE_BLAST_CAST
@@ -115,53 +151,52 @@ function ScorchFireBlastPattern:execute(player, target)
         if remaining_cast_time > 0.2 and resources:get_fire_blast_charges() > 0 then
             self:log("Attempting to cast Fire Blast during Scorch (Remaining cast: " ..
                 string.format("%.2f", remaining_cast_time) .. "s)", 2)
+            spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false)
+            -- No state transition here - handled by on_spell_cast
+        else
+            -- Scorch cast finished without casting Fire Blast
+            self:log("Scorch cast finished, no Fire Blast cast", 2)
 
-            if spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false) then
-                self.state = self.STATES.FIRST_PYROBLAST_CAST
-                self:log("Fire Blast cast successful, transitioning to FIRST_PYROBLAST_CAST state", 2)
-                return true
-            end
-        elseif cast_end_time == 0 then
-            self.state = self.STATES.SECOND_PYROBLAST_CAST
+            -- Skip directly to SECOND_PYROBLAST_CAST if we couldn't cast Fire Blast
             self:log("No Fire Blast charges after Scorch, transitioning to SECOND_PYROBLAST_CAST state", 1)
-            return true
+            self.state = self.STATES.SECOND_PYROBLAST_CAST
         end
         return true
 
         -- State: FIRST_PYROBLAST_CAST
     elseif self.state == self.STATES.FIRST_PYROBLAST_CAST then
         local has_hot_streak = resources:has_hot_streak(player)
-        self:log("Checking for Hot Streak before Pyroblast (Hot Streak: " .. tostring(has_hot_streak) .. ")", 3)
+        self:log("Checking for Hot Streak before first Pyroblast (Hot Streak: " .. tostring(has_hot_streak) .. ")", 3)
 
         local cast_end_time = player:get_active_spell_cast_end_time()
-        local current_time = core.game_time()
-        local remaining_cast_time = (cast_end_time - current_time) / 1000
-
-        if remaining_cast_time <= 0 then
-            self:log("Attempting to cast Pyroblast with Hot Streak", 2)
-            if spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false) then
-                self:log("First pyro cast, advancing to SECOND_PYROBLAST_CAST", 1)
-                self.state = self.STATES.SECOND_PYROBLAST_CAST
-                return true
-            end
+        if cast_end_time <= 0 and has_hot_streak then
+            self:log("Attempting to cast first Pyroblast with Hot Streak", 2)
+            spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false)
+            -- No state transition here - handled by on_spell_cast
         else
-            self:log("Waiting for scorch cast to end (Current cast: " ..
-                string.format("%.2f", remaining_cast_time) .. "s)", 3)
+            if cast_end_time > 0 then
+                self:log("Waiting for current cast to end", 3)
+            elseif not has_hot_streak then
+                self:log("Waiting for Hot Streak proc", 3)
+            end
         end
         return true
 
         -- State: SECOND_PYROBLAST_CAST
     elseif self.state == self.STATES.SECOND_PYROBLAST_CAST then
         local gcd = core.spell_book.get_global_cooldown()
-        if gcd <= 0 then
+        local has_hot_streak = resources:has_hot_streak(player)
+
+        if gcd <= 0 and has_hot_streak then
             self:log("Attempting to cast second Pyroblast with Hot Streak", 2)
-            if spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false) then
-                self:log("COMPLETED: Full sequence executed successfully", 1)
-                self:reset()
-                return true
-            end
+            spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false)
+            -- No state transition here - handled by on_spell_cast
         else
-            self:log("Waiting for GCD to end (GCD: " .. string.format("%.2f", gcd) .. "s)", 3)
+            if gcd > 0 then
+                self:log("Waiting for GCD to end (GCD: " .. string.format("%.2f", gcd) .. "s)", 3)
+            elseif not has_hot_streak then
+                self:log("Waiting for Hot Streak proc", 3)
+            end
         end
         return true
     end

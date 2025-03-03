@@ -7,6 +7,7 @@ local SPELL = {
         name = "Fireball",
         priority = 1,
         last_cast = 0,
+        last_attempt = 0,
         cast_delay = 0.20,
         is_off_gcd = false
     },
@@ -15,7 +16,8 @@ local SPELL = {
         name = "Fire Blast",
         priority = 1,
         last_cast = 0,
-        cast_delay = 0.10,
+        last_attempt = 0,
+        cast_delay = 0.40,
         is_off_gcd = true
     },
     PYROBLAST = {
@@ -23,6 +25,7 @@ local SPELL = {
         name = "Pyroblast",
         priority = 1,
         last_cast = 0,
+        last_attempt = 0,
         cast_delay = 0.20,
         is_off_gcd = false
     },
@@ -31,6 +34,7 @@ local SPELL = {
         name = "Phoenix Flames",
         priority = 1,
         last_cast = 0,
+        last_attempt = 0,
         cast_delay = 0.20,
         is_off_gcd = false
     },
@@ -39,6 +43,7 @@ local SPELL = {
         name = "Scorch",
         priority = 1,
         last_cast = 0,
+        last_attempt = 0,
         cast_delay = 0.20,
         is_off_gcd = false
     },
@@ -47,7 +52,8 @@ local SPELL = {
         name = "Combustion",
         priority = 1,
         last_cast = 0,
-        cast_delay = 0.10,
+        last_attempt = 0,
+        cast_delay = 0.30,
         is_off_gcd = true
     }
 }
@@ -59,7 +65,14 @@ local BUFF = {
     HYPERTHERMIA = enums.buff_db.HYPERTHERMIA
 }
 
+-- Create a map of spell IDs to spell objects
+local SPELL_BY_ID = {}
+for key, spell in pairs(SPELL) do
+    SPELL_BY_ID[spell.id] = spell
+end
+
 return {
     SPELL = SPELL,
-    BUFF = BUFF
+    BUFF = BUFF,
+    SPELL_BY_ID = SPELL_BY_ID
 }

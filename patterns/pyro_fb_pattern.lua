@@ -71,16 +71,18 @@ function PyroFireBlastPattern:execute(player, target)
         return false
     end
 
-    local hasHotStreak = resources:has_hot_streak(player)
     local gcd = core.spell_book.get_global_cooldown()
+    local hasHotStreak = resources:has_hot_streak(player)
 
     self:log("Executing - Current state: " .. self.state .. ", GCD: " .. string.format("%.2f", gcd) .. "s", 3)
 
     -- State: WAITING_FOR_GCD
     if self.state == self.STATES.WAITING_FOR_GCD then
         local fb_charges = resources:get_fire_blast_charges()
+
+        -- Check if we should transition to the next state
         if gcd > 0 and fb_charges > 0 then
-            self:log("GCD started, preparing Fire Blast (Fire Blast charges: " .. fb_charges .. ")", 2)
+            self:log("GCD active, Fire Blast charges available. Ready for Fire Blast cast.", 2)
             self.state = self.STATES.FIRE_BLAST_CAST
         elseif gcd <= 0 then
             self:log("GCD EXPIRED but no Fire Blast charges, aborting pattern", 2)
@@ -93,39 +95,76 @@ function PyroFireBlastPattern:execute(player, target)
         return true
 
         -- State: FIRE_BLAST_CAST
-    elseif self.state == self.STATES.FIRE_BLAST_CAST then
-        if not hasHotStreak and spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false) then
-            self.state = self.STATES.PYROBLAST_CAST
-            self:log("Fire Blast cast successful, transitioning to PYROBLAST_CAST state", 2)
-            return true
+    elseif self.state == self.STATES.FIRE_BLAST_CAST and spellcasting.last_cast == spell_data.SPELL.PYROBLAST.name then
+        -- Only attempt to cast if we don't already have Hot Streak
+        -- Try to cast Fire Blast but don't change state based on result
+        -- State change will happen in on_spell_cast when Fire Blast is detected
+        if spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false) then
+            self:log("Fire Blast cast request sent", 2)
         else
-            self:log("Fire Blast cast FAILED, retrying", 2)
-            return true
+            self:log("Fire Blast cast request failed", 2)
         end
 
+        return true
+
         -- State: PYROBLAST_CAST
-    elseif self.state == self.STATES.PYROBLAST_CAST then
+    elseif self.state == self.STATES.PYROBLAST_CAST and spellcasting.last_cast == spell_data.SPELL.FIRE_BLAST.name then
         if gcd == 0 then
-            self:log("Attempting to cast Pyroblast with Hot Streak", 2)
-            if spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false) then
-                self:log("COMPLETED: Full sequence executed successfully", 1)
-                self:reset()
-                return true
+            -- If Hot Streak is active, cast Pyroblast
+            -- But don't change state - that will happen in on_spell_cast
+            if hasHotStreak then
+                self:log("Attempting to cast Pyroblast with Hot Streak", 2)
+                if spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false) then
+                    self:log("Pyroblast cast request sent", 2)
+                else
+                    self:log("Pyroblast cast request failed", 2)
+                end
             else
-                self:log("Pyroblast cast FAILED, retrying", 2)
-                return true
+                self:log("Waiting for Hot Streak proc", 3)
             end
         elseif gcd <= 0 and self.start_time + config.reset_time > core.time() then
-            self:log("ABANDONED: No Hot Streak for Pyroblast (GCD ended)", 1)
+            -- Timeout check
+            self:log("ABANDONED: No Hot Streak for Pyroblast within timeout period", 1)
             self:reset()
             return false
         else
-            self:log("Waiting for Hot Streak proc or GCD (Current GCD: " .. string.format("%.2f", gcd) .. "s)", 3)
-            return true
+            self:log("Waiting for GCD (Current GCD: " .. string.format("%.2f", gcd) .. "s)", 3)
         end
+        return true
     end
 
     return true
+end
+
+---@return table|boolean
+function PyroFireBlastPattern:on_spell_cast(spell_id)
+    if not self.active then
+        self:log("pyro-fb not active, so skipping on_spell_cast", 3)
+        return false
+    end
+
+    -- Handle Fire Blast cast
+    if spell_id == spell_data.SPELL.FIRE_BLAST.id and self.state == self.STATES.FIRE_BLAST_CAST then
+        self:log("Detected Fire Blast cast, transitioning to PYROBLAST_CAST state", 2)
+        self.state = self.STATES.PYROBLAST_CAST
+        return true
+    end
+
+    -- Handle Pyroblast cast
+    if spell_id == spell_data.SPELL.PYROBLAST.id and self.state == self.STATES.PYROBLAST_CAST then
+        self:log("Detected Pyroblast cast, pattern complete", 1)
+        self:reset()
+        return true
+    end
+
+    -- If Pyroblast is cast at any point, reset the pattern
+    if spell_id == spell_data.SPELL.PYROBLAST.id then
+        self:log("Pyroblast cast detected outside of expected state, resetting pattern", 2)
+        self:reset()
+        return true
+    end
+
+    return false
 end
 
 return PyroFireBlastPattern

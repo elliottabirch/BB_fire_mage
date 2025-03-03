@@ -22,15 +22,15 @@ FireballHotstreakPattern.state = FireballHotstreakPattern.STATES.NONE
 function FireballHotstreakPattern:should_start(player, patterns_active)
     self:log("Evaluating conditions:", 3)
 
-    -- Don't start if other patterns are active
-    if patterns_active.pyro_fb or patterns_active.pyro_pf or patterns_active.scorch_fb or patterns_active.combustion_opener then
-        self:log("REJECTED: Another pattern is already active", 2)
+
+    if spellcasting.last_cast ~= spell_data.SPELL.FIREBALL.name then
+        self:log("REJECTED: Not currently casting Fireball", 2)
         return false
     end
-
-    -- Check if we're currently casting Fireball
+    local remaining_cast_time = resources:get_remaining_cast_time(player)
+    local elapsed_cast_time = resources:get_elapsed_cast_time(player)
     local active_spell_id = player:get_active_spell_id()
-    if active_spell_id ~= spell_data.SPELL.FIREBALL.id then
+    if active_spell_id ~= spell_data.SPELL.FIREBALL.id or remaining_cast_time < 300 or elapsed_cast_time < 500 then
         self:log("REJECTED: Not casting Fireball", 2)
         return false
     end
@@ -41,17 +41,10 @@ function FireballHotstreakPattern:should_start(player, patterns_active)
         return false
     end
 
-    -- Check if we're not in Combustion
-    local combustion_remaining = resources:get_combustion_remaining(player)
-    if combustion_remaining > 0 then
-        self:log("REJECTED: Combustion is active", 2)
-        return false
-    end
-
     local combustionCD = core.spell_book.get_spell_cooldown(spell_data.SPELL.COMBUSTION.id)
     local fire_blast_charges = resources:get_fire_blast_charges()
 
-    if combustionCD < 10 and fire_blast_charges < 2 then
+    if combustionCD < 15 and fire_blast_charges < 3 then
         self:log("REJECTED: Combustion CD or Fire Blast charges too low", 2)
         return false
     end
@@ -64,6 +57,45 @@ function FireballHotstreakPattern:start()
     self.state = self.STATES.FIRE_BLAST_CAST
     self.start_time = core.time()
     self:log("STARTED - State: " .. self.state, 1)
+end
+
+function FireballHotstreakPattern:reset()
+    local prev_state = self.state
+    self.active = false
+    self.state = self.STATES.NONE
+    self.start_time = 0
+    self:log("RESET (from " .. prev_state .. " state)", 1)
+end
+
+---Handles spell cast events to update pattern state
+---@param spell_id number The ID of the spell that was cast
+function FireballHotstreakPattern:on_spell_cast(spell_id)
+    if not self.active then
+        return false
+    end
+
+    self:log("Processing spell cast: " .. spell_id, 3)
+
+    -- Fire Blast was cast
+    if spell_id == spell_data.SPELL.FIRE_BLAST.id then
+        self:log("Fire Blast cast detected", 2)
+        if self.state == self.STATES.FIRE_BLAST_CAST then
+            self.state = self.STATES.PYROBLAST_CAST
+            self:log("State advanced to PYROBLAST_CAST after Fire Blast cast", 2)
+            return true
+        end
+
+        -- Pyroblast was cast
+    elseif spell_id == spell_data.SPELL.PYROBLAST.id then
+        self:log("Pyroblast cast detected", 2)
+        if self.state == self.STATES.PYROBLAST_CAST then
+            self:log("COMPLETED: Pyroblast cast detected, pattern complete", 1)
+            self:reset()
+            return true
+        end
+    end
+
+    return false
 end
 
 ---@param player game_object
@@ -80,20 +112,15 @@ function FireballHotstreakPattern:execute(player, target)
     if self.state == self.STATES.FIRE_BLAST_CAST then
         -- Check if Fireball is still being cast
         local cast_end_time = player:get_active_spell_cast_end_time()
-        local current_time = core.game_time()
 
         if cast_end_time > 0 then
             -- Cast Fire Blast during Fireball cast
             self:log("Attempting to cast Fire Blast during Fireball", 2)
-            if spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false) then
-                self.state = self.STATES.PYROBLAST_CAST
-                self:log("Fire Blast cast successful, waiting for Fireball to finish", 2)
-                return true
-            end
+            spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false)
+            -- No state change here - will be handled by on_spell_cast
         else
-            -- Fireball cast finished, move to next state
-            self.state = self.STATES.PYROBLAST_CAST
-            self:log("Fireball cast finished, transitioning to PYROBLAST_CAST state", 2)
+            self:log("resetting because fb was never cast", 2)
+            self:reset()
         end
         return true
 
@@ -108,11 +135,8 @@ function FireballHotstreakPattern:execute(player, target)
 
         -- Cast Pyroblast
         self:log("Attempting to cast Pyroblast with Hot Streak", 2)
-        if spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false) then
-            self:log("COMPLETED: Pyroblast cast after Fireball", 1)
-            self:reset()
-            return true
-        end
+        spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false)
+        -- No state change here - will be handled by on_spell_cast
         return true
     end
 

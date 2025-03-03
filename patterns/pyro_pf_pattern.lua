@@ -1,6 +1,5 @@
 local BasePattern = require("patterns/base_pattern")
 local resources = require("resources")
-local config = require("config")
 local spellcasting = require("spellcasting")
 local spell_data = require("spell_data")
 
@@ -22,13 +21,6 @@ PyroPhoenixFlamePattern.state = PyroPhoenixFlamePattern.STATES.NONE
 ---@return boolean
 function PyroPhoenixFlamePattern:should_start(player, pyro_fb_active)
     self:log("Evaluating conditions:", 3)
-
-    -- If the Fire Blast pattern is active, don't start this one
-    if pyro_fb_active then
-        self:log("REJECTED: Fire Blast pattern already active", 2)
-        return false
-    end
-    self:log("Check: No Fire Blast pattern active ✓", 3)
 
     -- Check if we just cast Pyroblast
     if spellcasting.last_cast ~= spell_data.SPELL.PYROBLAST.name then
@@ -52,15 +44,6 @@ function PyroPhoenixFlamePattern:should_start(player, pyro_fb_active)
         return true
     end
 
-    -- Check if a charge will be ready by end of GCD
-    local pf_ready_time = resources:phoenix_flames_ready_in(gcd)
-    if pf_ready_time < gcd then
-        self:log(
-            "ACCEPTED: Phoenix Flames will be ready in " .. string.format("%.2f", pf_ready_time) .. "s (before GCD ends)",
-            2)
-        return true
-    end
-
     self:log("REJECTED: No Phoenix Flames charges and none will be ready soon", 2)
     return false
 end
@@ -70,6 +53,43 @@ function PyroPhoenixFlamePattern:start()
     self.state = self.STATES.PF_CAST
     self.start_time = core.time()
     self:log("STARTED - State: " .. self.state, 1)
+end
+
+function PyroPhoenixFlamePattern:reset()
+    local prev_state = self.state
+    self.active = false
+    self.state = self.STATES.NONE
+    self.start_time = 0
+    self:log("RESET (from " .. prev_state .. " state)", 1)
+end
+
+---@param spell_id number
+---@return boolean
+function PyroPhoenixFlamePattern:on_spell_cast(spell_id)
+    if not self.active then
+        return false
+    end
+
+    self:log("Processing spell cast: " .. spell_id, 3)
+
+    -- Phoenix Flames was cast
+    if spell_id == spell_data.SPELL.PHOENIX_FLAMES.id then
+        if self.state == self.STATES.PF_CAST then
+            self:log("Phoenix Flames cast detected - transitioning to PYROBLAST_CAST state", 2)
+            self.state = self.STATES.PYROBLAST_CAST
+            return true
+        end
+
+        -- Pyroblast was cast
+    elseif spell_id == spell_data.SPELL.PYROBLAST.id then
+        if self.state == self.STATES.PYROBLAST_CAST then
+            self:log("Pyroblast cast detected in PYROBLAST_CAST state - pattern complete", 1)
+            self:reset()
+            return true
+        end
+    end
+
+    return false
 end
 
 ---@param player game_object
@@ -85,45 +105,21 @@ function PyroPhoenixFlamePattern:execute(player, target)
 
     -- State: PHOENIX_FLAMES_CAST
     if self.state == self.STATES.PF_CAST then
-        local pf_charges = resources:get_phoenix_flames_charges()
-        self:log("Checking Phoenix Flames charges: " .. pf_charges, 3)
-
-        if pf_charges > 0 and gcd == 0 then
-            self:log("Attempting to cast Phoenix Flames", 2)
-            if spellcasting:cast_spell(spell_data.SPELL.PHOENIX_FLAMES, target, false, false) then
-                self.state = self.STATES.PYROBLAST_CAST
-                self:log("Phoenix Flames cast successful, transitioning to PYROBLAST_CAST state", 2)
-                return true
-            else
-                self:log("Phoenix Flames cast FAILED, retrying", 2)
-                return true
-            end
-        else
-            self:log("ABANDONED: No Phoenix Flames charges", 1)
-            self:reset()
-            return false
-        end
-
+        self:log("Attempting to cast Phoenix Flames", 2)
+        spellcasting:cast_spell(spell_data.SPELL.PHOENIX_FLAMES, target, false, false)
+        -- No state transition here - handled by on_spell_cast
+        return true
         -- State: PYROBLAST_CAST
     elseif self.state == self.STATES.PYROBLAST_CAST then
-        local has_hot_streak = resources:has_hot_streak(player)
-        self:log("Checking for Hot Streak before Pyroblast (Hot Streak: " .. tostring(has_hot_streak) .. ")", 3)
-
         if gcd == 0 then
-            if spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false) then
-                self:log("COMPLETED: Full sequence executed successfully", 1)
-                self:reset()
-                return true
-            else
-                self:log("Pyroblast cast FAILED, retrying", 2)
-                return true
-            end
-        elseif gcd <= 0 and self.start_time + config.reset_time > core.time() then
-            self:log("ABANDONED: No Hot Streak for Pyroblast after Phoenix Flames (GCD ended)", 1)
-            self:reset()
-            return false
+            self:log("Attempting to cast Pyroblast with Hot Streak", 2)
+            spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false)
+            -- No state transition here - handled by on_spell_cast
+            return true
         else
-            self:log("Waiting for Hot Streak proc or GCD (Current GCD: " .. string.format("%.2f", gcd) .. "s)", 3)
+            if gcd > 0 then
+                self:log("Waiting for GCD before Pyroblast cast", 3)
+            end
             return true
         end
     end

@@ -91,4 +91,20 @@ function Resources:fire_blast_will_be_ready(duration)
     return time_until_charge < duration
 end
 
+---@param player game_object
+---@return number
+function Resources:get_remaining_cast_time(player)
+    local cast_end_time = player:get_active_spell_cast_end_time()
+    local current_time = core.game_time()
+    return (cast_end_time - current_time)
+end
+
+---@param player game_object
+---@return number
+function Resources:get_elapsed_cast_time(player)
+    local cast_start_time = player:get_active_spell_cast_start_time()
+    local current_time = core.game_time()
+    return (current_time - cast_start_time)
+end
+
 return Resources

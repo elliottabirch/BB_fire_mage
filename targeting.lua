@@ -34,8 +34,7 @@ function Targeting:get_best_target()
     local targets_list = target_selector:get_targets()
 
     for i, target in ipairs(targets_list) do
-        if unit_helper:is_in_combat(target) and
-            not pvp_helper:is_damage_immune(target, pvp_helper.damage_type_flags.MAGICAL) then
+        if not pvp_helper:is_damage_immune(target, pvp_helper.damage_type_flags.MAGICAL) then
             logger:log("Target selected: #" .. i .. " from target selector list", 3)
             return target
         end

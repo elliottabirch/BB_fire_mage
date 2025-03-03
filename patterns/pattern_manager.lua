@@ -1,3 +1,6 @@
+local spellcasting = require("spellcasting")
+local spell_data = require("spell_data")
+
 ---@class PatternManager
 ---@field active_pattern BasePattern|nil The currently active pattern
 ---@field patterns table<string, BasePattern> All available patterns
@@ -64,7 +67,7 @@ function PatternManager:get_pattern_priority(context)
         return {
             "combustion_opener",
             "pyro_fb",
-            "pyro_pf",
+            -- "pyro_pf",
             "scorch_fb"
         }
     else
@@ -86,6 +89,10 @@ end
 
 ---@param spell_id number The ID of the spell that was cast
 function PatternManager:handle_spell_cast(spell_id)
+    if spell_data.SPELL_BY_ID[spell_id] then
+        spellcasting:set_last_cast(spell_data.SPELL_BY_ID[spell_id])
+    end
+
     if not self.active_pattern then
         return
     end
@@ -94,12 +101,6 @@ function PatternManager:handle_spell_cast(spell_id)
     -- This is useful for interrupting patterns when certain spells are manually cast
     if self.active_pattern.on_spell_cast then
         self.active_pattern:on_spell_cast(spell_id)
-    end
-
-    -- Reset pattern on Pyroblast cast
-    if spell_id == spell_data.SPELL.PYROBLAST.id then
-        self.active_pattern:reset()
-        self.active_pattern = nil
     end
 end
 
