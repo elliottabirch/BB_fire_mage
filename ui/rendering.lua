@@ -10,6 +10,7 @@ local logger = require("logger")
 local buff_manager = require("common/modules/buff_manager")
 local spell_data = require("spell_data")
 local spellcasting = require("spellcasting")
+local color = require("common/color")
 
 -- Render menu UI
 function UiRenderer:render_menu()
@@ -22,7 +23,14 @@ function UiRenderer:render_menu()
 
         menu_elements.keybinds_tree_node:render("Keybinds", function()
             menu_elements.enable_toggle:render("Enable Script Toggle")
+            menu_elements.toggle_cooldowns:render("Use Cooldowns Toggle",
+                "Enable/disable automatic usage of major cooldowns like Combustion")
         end)
+
+        -- Add smart combustion checkbox with header
+        core.menu.header():render("Cooldowns", color.white())
+        menu_elements.smart_combustion:render("Smart Combustion",
+            "Only use Combustion when the fight is predicted to be long enough")
 
         menu_elements.ts_custom_logic_override:render("Enable TS Custom Settings Override",
             "Allows the script to automatically adjust target selection settings")
@@ -39,6 +47,12 @@ function UiRenderer:render_control_panel()
     control_panel_helper:insert_toggle(control_panel_elements, {
         name = "[Fire Mage] Enable (" .. key_helper:get_key_name(menu_elements.enable_toggle:get_key_code()) .. ")",
         keybind = menu_elements.enable_toggle
+    })
+
+    -- Add the cooldowns toggle to the control panel
+    control_panel_helper:insert_toggle(control_panel_elements, {
+        name = "[Fire Mage] Cooldowns (" .. key_helper:get_key_name(menu_elements.toggle_cooldowns:get_key_code()) .. ")",
+        keybind = menu_elements.toggle_cooldowns
     })
 
     return control_panel_elements
@@ -61,32 +75,6 @@ function UiRenderer:render(player, active_pattern_info)
             plugin_helper:draw_text_character_center("DISABLED")
         end
         return
-    end
-
-    -- Show debug info if enabled
-    if menu_elements.debug_info:get_state() then
-        -- Build status text
-        local combustion_active = buff_manager:get_buff_data(player, spell_data.BUFF.COMBUSTION).is_active
-        local hot_streak_active = resources:has_hot_streak(player)
-        local heating_up_active = resources:has_heating_up(player)
-
-        local text = "Last Cast: " .. (spellcasting.last_cast or "None") ..
-            "\nPattern: " .. active_pattern_info ..
-            "\nFire Blast: " .. resources:get_fire_blast_charges() ..
-            ", PF: " .. resources:get_phoenix_flames_charges() ..
-            "\nCombustion: " .. (combustion_active and "Active" or "Inactive") ..
-            "\nHot Streak: " .. (hot_streak_active and "Active" or "Inactive") ..
-            "\nHeating Up: " .. (heating_up_active and "Active" or "Inactive")
-
-        -- Add recent logs
-        if #logger.logs > 0 then
-            text = text .. "\n\nRecent Actions:"
-            for i = 1, math.min(5, #logger.logs) do
-                text = text .. "\n- " .. logger.logs[i]
-            end
-        end
-
-        plugin_helper:draw_text_character_center(text, nil, 100)
     end
 end
 

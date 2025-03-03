@@ -165,18 +165,16 @@ local function on_update()
         logger:log("Standard rotation fallback", 3)
 
         if resources:has_hot_streak(player) or resources:has_hyperthermia(player) then
+            if resources:has_hyperthermia(player) and resources:has_heating_up(player) and resources:get_fire_blast_charges() > 0 then
+                spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false)
+                return
+            end
             logger:log("Standard rotation: Hot Streak or Hyperthermia detected, casting Pyroblast", 3)
             spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false)
             return
         end
 
         if not player:is_casting_spell() then
-            logger:log("Not casting, checking next in standard rotation ", 3)
-            local last_cast = spellcasting.last_cast or "nil"
-            logger:log("Not casting, checking next in standard rotation LAST SPELL CAST: " .. last_cast, 3)
-            logger:log(
-                "Not casting, checking next in standard rotation PF CHARGES: " .. resources:get_phoenix_flames_charges(),
-                3)
             if spellcasting.last_cast == spell_data.SPELL.FIREBALL.name and not resources:has_heating_up(player) and resources:get_phoenix_flames_charges() == 2 then
                 logger:log("Standard rotation: using pf charge", 3)
                 spellcasting:cast_spell(spell_data.SPELL.PHOENIX_FLAMES, target, false, false)

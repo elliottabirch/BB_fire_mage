@@ -3,6 +3,8 @@ local resources = require("resources")
 local config = require("config")
 local spellcasting = require("spellcasting")
 local spell_data = require("spell_data")
+local plugin_helper = require("common/utility/plugin_helper")
+local menu_elements = require("ui/menu_elements")
 
 ---@class CombustionOpenerPattern : BasePattern
 ---@field has_activated_this_combustion boolean
@@ -27,14 +29,36 @@ CombustionOpenerPattern.has_activated_this_combustion = false
 ---@return boolean
 function CombustionOpenerPattern:should_start(player, patterns_active)
     self:log("Evaluating conditions:", 3)
-
-    if self.has_activated_this_combustion then
-        self:log("REJECTED: opener already activated this combustion", 2)
+    if not plugin_helper:is_toggle_enabled(menu_elements.toggle_cooldowns) then
+        self:log("REJECTED: Cooldowns are disabled via keybind", 2)
         return false
     end
 
-    if spellcasting.last_cast ~= spell_data.SPELL.FIREBALL.name then
-        self:log("REJECTED: last cast was not Fireball", 2)
+    -- The rest of the method remains the same...
+    if menu_elements.smart_combustion:get_state() then
+        ---@type combat_forecast
+        local combat_forecast = require("common/modules/combat_forecast")
+        local combat_length = combat_forecast:get_forecast()
+        if not combat_length < 30 then
+            self:log(
+                "REJECTED: Smart Combustion enabled but fight is not predicted to be long enough: " ..
+                combat_length .. " seconds", 2)
+            return false
+        else
+            self:log("Smart Combustion: Fight is predicted to be long enough: " .. combat_length .. " seconds", 3)
+        end
+    end
+
+    -- Don't start if other patterns are active
+    if patterns_active.pyro_fb or patterns_active.pyro_pf or patterns_active.scorch_fb then
+        self:log("REJECTED: Another pattern is already active", 2)
+        return false
+    end
+
+    -- Remaining checks continue as before...
+    if self.has_activated_this_combustion then
+        self:log("REJECTED: opener already activated this combustion", 2)
+        return false
     end
 
     -- Check if we have enough Fire Blast charges
@@ -61,6 +85,13 @@ function CombustionOpenerPattern:should_start(player, patterns_active)
     self:log("Combustion CD: " .. combustion_cd, 3)
     if combustion_cd > ((remaining_cast_time - 500) / 1000) then
         self:log("REJECTED: combustion on cd", 2)
+        return false
+    end
+
+    local elapsed_cast = resources:get_elapsed_cast_time(player)
+
+    if elapsed_cast < 500 then
+        self:log("REJECTED: cast time too short", 2)
         return false
     end
 

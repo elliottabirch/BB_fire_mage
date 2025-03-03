@@ -67,7 +67,7 @@ function PatternManager:get_pattern_priority(context)
         return {
             "combustion_opener",
             "pyro_fb",
-            -- "pyro_pf",
+            "pyro_pf",
             "scorch_fb"
         }
     else
