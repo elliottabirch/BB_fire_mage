@@ -31,50 +31,17 @@ local combustion_opener_pattern = require("patterns/combustion_opener_pattern")
 local fireball_hotstreak_pattern = require("patterns/fireball_hotstreak_pattern")
 
 -----------------------------------
--- UTILITY FUNCTIONS
+-- PATTERN MANAGER INITIALIZATION
 -----------------------------------
----@return boolean
-local function isAnyPatternActive()
-    return pyro_fb_pattern.active or
-        pyro_pf_pattern.active or
-        scorch_fb_pattern.active or
-        combustion_opener_pattern.active or
-        fireball_hotstreak_pattern.active
-end
-
----@return boolean
-local function isAnyCombustionPatternActive()
-    return pyro_fb_pattern.active or
-        pyro_pf_pattern.active or
-        scorch_fb_pattern.active
-end
-
----@return string
-local function getActivePatternInfo()
-    if pyro_fb_pattern.active then
-        return "Pyro->FB: " .. pyro_fb_pattern.state
-    elseif pyro_pf_pattern.active then
-        return "Pyro->PF: " .. pyro_pf_pattern.state
-    elseif scorch_fb_pattern.active then
-        return "Scorch+FB: " .. scorch_fb_pattern.state
-    elseif combustion_opener_pattern.active then
-        return "Combustion: " .. combustion_opener_pattern.state
-    elseif fireball_hotstreak_pattern.active then
-        return "FB-HS: " .. fireball_hotstreak_pattern.state
-    else
-        return "None"
-    end
-end
-
-
-
-
 -- Register all patterns
 pattern_manager:register_pattern("pyro_fb", pyro_fb_pattern)
 pattern_manager:register_pattern("pyro_pf", pyro_pf_pattern)
 pattern_manager:register_pattern("scorch_fb", scorch_fb_pattern)
 pattern_manager:register_pattern("combustion_opener", combustion_opener_pattern)
 pattern_manager:register_pattern("fireball_hotstreak", fireball_hotstreak_pattern)
+
+-- Save the last combustion state for detecting state changes
+local last_combustion_state = false
 
 -----------------------------------
 -- MAIN EXECUTION
@@ -111,7 +78,7 @@ local function on_update()
         return
     end
 
-    -- Don't cast during another cast
+    -- Don't cast during another cast (except specific casts we want to modify)
     local cast_end_time = player:get_active_spell_cast_end_time()
     local active_spell_id = player:get_active_spell_id()
 
@@ -133,52 +100,48 @@ local function on_update()
 
     logger:log("Evaluating patterns with target: " .. target:get_name(), 3)
     local combustion_time = resources:get_combustion_remaining(player)
+    local combustion_active = combustion_time > 0
 
-    -- Collect pattern active states for should_start checks
-    local patterns_active = {
-        pyro_fb = pyro_fb_pattern.active,
-        pyro_pf = pyro_pf_pattern.active,
-        scorch_fb = scorch_fb_pattern.active,
-        combustion_opener = combustion_opener_pattern.active,
-        fireball_hotstreak = fireball_hotstreak_pattern.active
+    -- Check for combustion state change
+    if last_combustion_state ~= combustion_active then
+        pattern_manager:handle_combustion_state_change(player, last_combustion_state, combustion_active)
+        last_combustion_state = combustion_active
+    end
+
+    -- Prepare context for pattern selection
+    local context = {
+        combustion_active = combustion_active,
+        combustion_time = combustion_time,
+        last_cast = spellcasting.last_cast,
+        gcd = core.spell_book.get_global_cooldown(),
+        is_casting = player:is_casting_spell(),
+        active_spell_id = active_spell_id,
+        cast_end_time = cast_end_time
     }
 
-    -- COMBUSTION ACTIVE ROTATION
-    if combustion_time > 0 then
-        logger:log("Combustion is active (" .. string.format("%.2f", combustion_time / 1000) .. "s remaining)", 2)
-
-        -- Check if we need to start a pattern
-        if not isAnyPatternActive() then
-            logger:log("No pattern active, checking for pattern to start", 3)
-
-            -- Try to start patterns in priority order
-            if combustion_opener_pattern:should_start(player, patterns_active) then
-                combustion_opener_pattern:start()
-            elseif pyro_fb_pattern:should_start(player) then
-                pyro_fb_pattern:start()
-            elseif pyro_pf_pattern:should_start(player, pyro_fb_pattern.active) then
-                pyro_pf_pattern:start()
-            elseif scorch_fb_pattern:should_start(player, patterns_active) then
-                scorch_fb_pattern:start()
-            end
+    -- Pattern management - first check if we have an active pattern
+    if pattern_manager:is_pattern_active() then
+        -- Execute existing pattern
+        if pattern_manager:execute_active_pattern(player, target) then
+            return -- Pattern is still executing
         end
+        -- If we got here, the pattern has completed
+    end
 
-        -- Execute patterns if active
-        if combustion_opener_pattern.active and combustion_opener_pattern:execute(player, target) then
+    -- No active pattern, try to select one
+    if pattern_manager:select_pattern(player, context) then
+        -- A new pattern was selected, start executing it
+        if pattern_manager:execute_active_pattern(player, target) then
             return
         end
+    end
 
-        if pyro_fb_pattern.active and pyro_fb_pattern:execute(player, target) then
-            return
-        end
+    -- If we get here, no pattern is active or applicable
+    -- Fall back to the default rotation logic
 
-        if pyro_pf_pattern.active and pyro_pf_pattern:execute(player, target) then
-            return
-        end
-
-        if scorch_fb_pattern.active and scorch_fb_pattern:execute(player, target) then
-            return
-        end
+    if combustion_active then
+        -- COMBUSTION FALLBACK ROTATION
+        logger:log("Combustion fallback rotation", 2)
 
         local gcd = core.spell_book.get_global_cooldown()
         local is_casting = player:is_casting_spell()
@@ -200,38 +163,7 @@ local function on_update()
         end
     else
         -- REGULAR ROTATION (NO COMBUSTION)
-        logger:log("Combustion not active, using standard rotation", 3)
-
-        if combustion_opener_pattern.has_activated_this_combustion then
-            combustion_opener_pattern:reset_combustion_flag()
-        end
-
-        if isAnyCombustionPatternActive() then
-            pyro_fb_pattern:reset()
-            pyro_pf_pattern:reset()
-            scorch_fb_pattern:reset()
-        end
-
-        if not isAnyPatternActive() then
-            logger:log("No pattern active in non-combustion rota, checking for pattern to start", 3)
-            if combustion_opener_pattern:should_start(player, patterns_active) then
-                combustion_opener_pattern:start()
-            end
-            if fireball_hotstreak_pattern:should_start(player, patterns_active) then
-                fireball_hotstreak_pattern:start()
-            end
-        else
-            logger:log("Pattern already active in non-combustion rota", 3)
-        end
-
-        -- Execute patterns if active
-        if combustion_opener_pattern.active and combustion_opener_pattern:execute(player, target) then
-            return
-        end
-
-        if fireball_hotstreak_pattern.active and fireball_hotstreak_pattern:execute(player, target) then
-            return
-        end
+        logger:log("Standard rotation fallback", 3)
 
         if resources:has_hot_streak(player) or resources:has_hyperthermia(player) then
             logger:log("Standard rotation: Hot Streak or Hyperthermia detected, casting Pyroblast", 3)
@@ -262,36 +194,11 @@ local function on_spell_cast(spell_id)
         return
     end
 
-    -- Check if spell is Pyroblast
+    -- Let the pattern manager handle spell casts
+    pattern_manager:handle_spell_cast(spell_id)
+
+    -- Additional spell handling if needed
     if spell_id == spell_data.SPELL.PYROBLAST.id then
-        logger:log("Pyroblast was cast - Resetting all active patterns", 2)
-
-        -- Reset all patterns
-        if pyro_fb_pattern.active then
-            logger:log("Resetting Pyro->FB pattern due to manual Pyroblast cast", 2)
-            pyro_fb_pattern:reset()
-        end
-
-        if pyro_pf_pattern.active then
-            logger:log("Resetting Pyro->PF pattern due to manual Pyroblast cast", 2)
-            pyro_pf_pattern:reset()
-        end
-
-        if scorch_fb_pattern.active then
-            logger:log("Resetting Scorch+FB pattern due to manual Pyroblast cast", 2)
-            scorch_fb_pattern:reset()
-        end
-
-        if combustion_opener_pattern.active then
-            logger:log("Resetting Combustion Opener pattern due to manual Pyroblast cast", 2)
-            combustion_opener_pattern:reset()
-        end
-
-        if fireball_hotstreak_pattern.active then
-            logger:log("Resetting Fireball->HotStreak pattern due to manual Pyroblast cast", 2)
-            fireball_hotstreak_pattern:reset()
-        end
-
         spellcasting:set_last_cast(spell_data.SPELL.PYROBLAST)
     end
 end
@@ -302,7 +209,7 @@ end
 local function on_render()
     local player = core.object_manager.get_local_player()
     if player then
-        ui_renderer:render(player, getActivePatternInfo())
+        ui_renderer:render(player, pattern_manager:get_active_pattern_info())
     end
 end
 
