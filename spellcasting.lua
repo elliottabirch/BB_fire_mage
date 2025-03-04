@@ -45,6 +45,17 @@ function Spellcasting:cast_spell(spell, target, skip_facing, skip_range)
         return false
     end
 
+    if spell.id == spell_data.SPELL.FIRE_BLAST.id then
+        local fb_target = targeting:get_fireblast_target()
+        if fb_target then
+            core.input.cast_target_spell(
+                spell.id, fb_target)
+            spell.last_attempt = current_time
+            return true
+        end
+    end
+
+
     -- Queue the spell based on whether it's off the GCD or not
     if spell.is_off_gcd then
         core.input.cast_target_spell(

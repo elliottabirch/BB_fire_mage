@@ -177,4 +177,9 @@ function Targeting:count_nearby_enemies(target, targets_list, radius)
     return count
 end
 
+---@return game_object|nil
+function Targeting:get_fireblast_target()
+    return self:get_best_target()
+end
+
 return Targeting
