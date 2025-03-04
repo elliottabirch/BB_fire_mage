@@ -140,6 +140,18 @@ function CombustionOpenerPattern:execute(player, target)
 
     -- State: BUILDER (cast Fireball if not moving)
     if self.state == self.STATES.BUILDER then
+        if has_hot_streak then
+            self:log("player has hot streak, moving to SCORCH_OR_FIREBALL")
+            self.state = self.STATES.SCORCH_OR_FIREBALL
+            return true
+        end
+
+        if has_heating_up then
+            self:log("player has heating up, moving to PHOENIX_FLAMES")
+            self.state = self.STATES.PHOENIX_FLAMES_CAST
+            return true
+        end
+
         if is_moving then
             self:log("Player is moving, skipping to Phoenix Flames", 2)
             self.state = self.STATES.PHOENIX_FLAMES_CAST
@@ -162,6 +174,11 @@ function CombustionOpenerPattern:execute(player, target)
         -- State: PHOENIX_FLAMES_CAST
     elseif self.state == self.STATES.PHOENIX_FLAMES_CAST then
         -- Wait for any existing cast to finish
+        if has_hot_streak then
+            self:log("player has hot streak, moving to SCORCH_OR_FIREBALL")
+            self.state = self.STATES.SCORCH_OR_FIREBALL
+            return true
+        end
         if is_casting then
             self:log("Waiting for current cast to finish before Phoenix Flames", 3)
             return true

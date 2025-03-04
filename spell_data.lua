@@ -56,13 +56,15 @@ local SPELL = {
         cast_delay = 0.30,
         is_off_gcd = true
     }
+
 }
 
 local BUFF = {
     HOT_STREAK = enums.buff_db.HOT_STREAK,
     HEATING_UP = enums.buff_db.HEATING_UP,
     COMBUSTION = enums.buff_db.COMBUSTION,
-    HYPERTHERMIA = enums.buff_db.HYPERTHERMIA
+    HYPERTHERMIA = enums.buff_db.HYPERTHERMIA,
+    GLORIOUS_INCANDESCENSE = enums.buff_db.GLORIOUS_INCANDESCENSE
 }
 
 -- Create a map of spell IDs to spell objects

@@ -7,6 +7,8 @@ local enums = require("common/enums")
 local spell_queue = require("common/modules/spell_queue")
 ---@type buff_manager
 local buff_manager = require("common/modules/buff_manager")
+---@type combat_forecast
+local combat_forecast = require("common/modules/combat_forecast")
 ---@type plugin_helper
 local plugin_helper = require("common/utility/plugin_helper")
 ---@type control_panel_helper
@@ -69,7 +71,6 @@ local function on_update()
         end
         return
     end
-
     -- Check for spell interruptions
     local was_interrupted = spell_tracker:update(player)
     if was_interrupted and pattern_manager:is_pattern_active() then
@@ -181,7 +182,7 @@ local function on_update()
     else
         -- REGULAR ROTATION (NO COMBUSTION)
         logger:log("Standard rotation fallback", 3)
-
+        local combat_too_short = combat_forecast:get_forecast() > 0
         if resources:has_hot_streak(player) or resources:has_hyperthermia(player) then
             if resources:has_hyperthermia(player) and resources:has_heating_up(player) and resources:get_fire_blast_charges() > 0 then
                 spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false)
@@ -191,6 +192,20 @@ local function on_update()
             spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false)
             return
         end
+        -- TODO: implement resource spending at end of fight
+        -- if combat_too_short then
+        --     logger:log("Standard rotation: combat too short. using resources", 3)
+        --     if not resources:has_hot_streak(player) then
+        --         logger:log("Standard rotation: combat too short. doesnt have hot streak", 3)
+        --         if player:is_casting_spell() or core.spell_book.get_global_cooldown() > 0 and spellcasting.last_cast ~= spell_data.SPELL.PHOENIX_FLAMES.name then
+        --             logger:log("Standard rotation: combat too short. getting hot streak with FB", 3)
+        --             spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false)
+        --         else
+        --             logger:log("Standard rotation: combat too short. getting hot streak with PF", 3)
+        --             spellcasting:cast_spell(spell_data.SPELL.PHOENIX_FLAMES, target, false, false)
+        --         end
+        --     end
+        -- end
 
         if not player:is_casting_spell() then
             if spellcasting.last_cast == spell_data.SPELL.FIREBALL.name and not resources:has_heating_up(player) and resources:get_phoenix_flames_charges() == 2 then
