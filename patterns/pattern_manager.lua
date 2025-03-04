@@ -74,6 +74,7 @@ function PatternManager:get_pattern_priority(context)
     else
         return {
             "combustion_opener",
+            "scorch_pattern",
             "fireball_hotstreak"
         }
     end

@@ -30,6 +30,7 @@ local pyro_pf_pattern = require("patterns/pyro_pf_pattern")
 local scorch_fb_pattern = require("patterns/scorch_fb_pattern")
 local combustion_opener_pattern = require("patterns/combustion_opener_pattern")
 local fireball_hotstreak_pattern = require("patterns/fireball_hotstreak_pattern")
+local scorch_pattern = require("patterns/scorch_pattern")
 
 -----------------------------------
 -- PATTERN MANAGER INITIALIZATION
@@ -40,6 +41,7 @@ pattern_manager:register_pattern("pyro_pf", pyro_pf_pattern)
 pattern_manager:register_pattern("scorch_fb", scorch_fb_pattern)
 pattern_manager:register_pattern("combustion_opener", combustion_opener_pattern)
 pattern_manager:register_pattern("fireball_hotstreak", fireball_hotstreak_pattern)
+pattern_manager:register_pattern("scorch_pattern", scorch_pattern)
 
 -- Save the last combustion state for detecting state changes
 local last_combustion_state = false
@@ -195,7 +197,7 @@ local function on_update()
                 spellcasting:cast_spell(spell_data.SPELL.PHOENIX_FLAMES, target, false, false)
             else
                 if player:is_moving() then
-                    spellcasting:cast_spell(spell_data.SPELL.scorch, target, false, false)
+                    spellcasting:cast_spell(spell_data.SPELL.SCORCH, target, false, false)
                 else
                     local scorch_target = targeting:get_scorch_target()
                     if scorch_target then
