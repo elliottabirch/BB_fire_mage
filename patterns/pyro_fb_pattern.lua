@@ -112,15 +112,11 @@ function PyroFireBlastPattern:execute(player, target)
         if gcd == 0 then
             -- If Hot Streak is active, cast Pyroblast
             -- But don't change state - that will happen in on_spell_cast
-            if hasHotStreak then
-                self:log("Attempting to cast Pyroblast with Hot Streak", 2)
-                if spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false) then
-                    self:log("Pyroblast cast request sent", 2)
-                else
-                    self:log("Pyroblast cast request failed", 2)
-                end
+            self:log("Attempting to cast Pyroblast at end of gcd", 2)
+            if spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false) then
+                self:log("Pyroblast cast request sent", 2)
             else
-                self:log("Waiting for Hot Streak proc", 3)
+                self:log("Pyroblast cast request failed", 2)
             end
         elseif gcd <= 0 and self.start_time + config.reset_time > core.time() then
             -- Timeout check

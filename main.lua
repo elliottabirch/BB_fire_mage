@@ -62,6 +62,9 @@ local function on_update()
     -- Check if script is enabled
     if not menu_elements.enable_script_check:get_state() or
         not plugin_helper:is_toggle_enabled(menu_elements.enable_toggle) then
+        if pattern_manager:is_pattern_active() then
+            pattern_manager:reset_pattern()
+        end
         return
     end
 
@@ -152,6 +155,10 @@ local function on_update()
 
         local gcd = core.spell_book.get_global_cooldown()
         local is_casting = player:is_casting_spell()
+        if not pattern_manager:is_pattern_active() and resources:has_hot_streak(player) and spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false) then
+            logger:log("Consumed rogue hot streak with pyrroblast")
+            return
+        end
 
         if gcd == 0 and not is_casting then
             if not resources:has_hot_streak(player) then

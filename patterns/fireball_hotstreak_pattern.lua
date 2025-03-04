@@ -112,8 +112,12 @@ function FireballHotstreakPattern:execute(player, target)
     if self.state == self.STATES.FIRE_BLAST_CAST then
         -- Check if Fireball is still being cast
         local cast_end_time = player:get_active_spell_cast_end_time()
-
-        if cast_end_time > 0 then
+        if not resources:has_heating_up(player) then
+            self:log("heating up dropped off, resetting", 2)
+            self:reset()
+        end
+        local elapsed_cast_time = resources:get_elapsed_cast_time(player)
+        if cast_end_time > 0 and elapsed_cast_time > 500 then
             -- Cast Fire Blast during Fireball cast
             self:log("Attempting to cast Fire Blast during Fireball", 2)
             spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false)
