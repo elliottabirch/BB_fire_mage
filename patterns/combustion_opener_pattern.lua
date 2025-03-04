@@ -289,12 +289,6 @@ function CombustionOpenerPattern:execute(player, target)
 
         -- State: SECOND_PYRO
     elseif self.state == self.STATES.SECOND_PYRO then
-        -- Wait for Hot Streak proc if needed
-        if not has_hot_streak then
-            self:log("Waiting for Hot Streak proc before second Pyroblast", 3)
-            return true
-        end
-
         -- Wait for GCD
         if gcd > 0.1 then
             self:log("Waiting for GCD before second Pyroblast (" .. string.format("%.2f", gcd) .. "s)", 3)

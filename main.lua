@@ -194,9 +194,19 @@ local function on_update()
                 logger:log("Standard rotation: using pf charge", 3)
                 spellcasting:cast_spell(spell_data.SPELL.PHOENIX_FLAMES, target, false, false)
             else
-                -- Default to Fireball
-                logger:log("Standard rotation: Casting Fireball", 3)
-                spellcasting:cast_spell(spell_data.SPELL.FIREBALL, target, false, false)
+                if player:is_moving() then
+                    spellcasting:cast_spell(spell_data.SPELL.scorch, target, false, false)
+                else
+                    local scorch_target = targeting:get_scorch_target()
+                    if scorch_target then
+                        logger:log("Standard rotation: Casting Fireball", 3)
+                        spellcasting:cast_spell(spell_data.SPELL.SCORCH, target, false, false)
+                    end
+
+                    -- Default to Fireball
+                    logger:log("Standard rotation: Casting Fireball", 3)
+                    spellcasting:cast_spell(spell_data.SPELL.FIREBALL, target, false, false)
+                end
             end
         end
     end

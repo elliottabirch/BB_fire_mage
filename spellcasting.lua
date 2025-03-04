@@ -9,6 +9,8 @@ local Spellcasting = {
 local spell_helper = require("common/utility/spell_helper")
 local spell_queue = require("common/modules/spell_queue")
 local logger = require("logger")
+local spell_data = require("spell_data")
+local targeting = require("targeting")
 
 ---@param spell table
 function Spellcasting:set_last_cast(spell)
@@ -41,6 +43,17 @@ function Spellcasting:cast_spell(spell, target, skip_facing, skip_range)
     if current_time - spell.last_attempt < spell.cast_delay then
         logger:log("Cast rejected: " .. spell.name .. " (Rate limited)", 3)
         return false
+    end
+
+    if spell.id == spell_data.SPELL.SCORCH.id then
+        local scorch_target = targeting:get_scorch_target()
+        if scorch_target then
+            spell_queue:queue_spell_target(
+                spell.id, target, spell.priority, "Casting " .. spell.name
+            )
+            spell.last_attempt = current_time
+            return true
+        end
     end
 
     -- Queue the spell based on whether it's off the GCD or not
