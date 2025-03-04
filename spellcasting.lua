@@ -45,17 +45,6 @@ function Spellcasting:cast_spell(spell, target, skip_facing, skip_range)
         return false
     end
 
-    if spell.id == spell_data.SPELL.SCORCH.id then
-        local scorch_target = targeting:get_scorch_target()
-        if scorch_target then
-            spell_queue:queue_spell_target(
-                spell.id, target, spell.priority, "Casting " .. spell.name
-            )
-            spell.last_attempt = current_time
-            return true
-        end
-    end
-
     -- Queue the spell based on whether it's off the GCD or not
     if spell.is_off_gcd then
         core.input.cast_target_spell(
