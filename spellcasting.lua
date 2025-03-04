@@ -45,9 +45,8 @@ function Spellcasting:cast_spell(spell, target, skip_facing, skip_range)
 
     -- Queue the spell based on whether it's off the GCD or not
     if spell.is_off_gcd then
-        spell_queue:queue_spell_target_fast(
-            spell.id, target, spell.priority, "Casting " .. spell.name
-        )
+        core.input.cast_target_spell(
+            spell.id, target)
         spell.last_attempt = current_time
     else
         spell_queue:queue_spell_target(

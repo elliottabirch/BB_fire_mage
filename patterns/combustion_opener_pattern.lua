@@ -5,6 +5,7 @@ local spellcasting = require("spellcasting")
 local spell_data = require("spell_data")
 local plugin_helper = require("common/utility/plugin_helper")
 local menu_elements = require("ui/menu_elements")
+local combat_forecast = require("common/modules/combat_forecast")
 
 ---@class CombustionOpenerPattern : BasePattern
 ---@field has_activated_this_combustion boolean
@@ -37,9 +38,9 @@ function CombustionOpenerPattern:should_start(player, patterns_active)
     -- The rest of the method remains the same...
     if menu_elements.smart_combustion:get_state() then
         ---@type combat_forecast
-        local combat_forecast = require("common/modules/combat_forecast")
+
         local combat_length = combat_forecast:get_forecast()
-        if not combat_length < 30 then
+        if combat_length < 30 then
             self:log(
                 "REJECTED: Smart Combustion enabled but fight is not predicted to be long enough: " ..
                 combat_length .. " seconds", 2)

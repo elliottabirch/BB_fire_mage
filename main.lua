@@ -21,6 +21,7 @@ local resources = require("resources")
 local targeting = require("targeting")
 local menu_elements = require("ui/menu_elements")
 local ui_renderer = require("ui/rendering")
+local spell_tracker = require("spell_tracker")
 
 -- Patterns
 local pattern_manager = require("patterns/pattern_manager")
@@ -42,7 +43,6 @@ pattern_manager:register_pattern("fireball_hotstreak", fireball_hotstreak_patter
 
 -- Save the last combustion state for detecting state changes
 local last_combustion_state = false
-
 -----------------------------------
 -- MAIN EXECUTION
 -----------------------------------
@@ -63,6 +63,14 @@ local function on_update()
     if not menu_elements.enable_script_check:get_state() or
         not plugin_helper:is_toggle_enabled(menu_elements.enable_toggle) then
         return
+    end
+
+    -- Check for spell interruptions
+    local was_interrupted = spell_tracker:update(player)
+    if was_interrupted and pattern_manager:is_pattern_active() then
+        logger:log("RESETTING PATTERN: Spell was interrupted, resetting pattern", 2)
+
+        pattern_manager:reset_pattern()
     end
 
     -- Don't cast during channeling

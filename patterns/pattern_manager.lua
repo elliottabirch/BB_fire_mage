@@ -1,5 +1,6 @@
 local spellcasting = require("spellcasting")
 local spell_data = require("spell_data")
+local logger = require("logger")
 
 ---@class PatternManager
 ---@field active_pattern BasePattern|nil The currently active pattern
@@ -135,6 +136,15 @@ function PatternManager:get_pattern_states()
         states[name] = pattern.active
     end
     return states
+end
+
+function PatternManager:reset_pattern()
+    logger:log("attempting to reset pattern", 2)
+    if self.active_pattern then
+        self.active_pattern:log("PATTERN RESET", 2)
+        self.active_pattern:reset()
+        self.active_pattern = nil
+    end
 end
 
 -- Initialize and return a new PatternManager
