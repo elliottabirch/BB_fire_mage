@@ -30,6 +30,20 @@ function PyroFireBlastPattern:should_start(player)
     end
     self:log("Check: Last cast WAS Pyroblast ✓", 3)
 
+    local fire_blast_charges = resources:get_fire_blast_charges()
+    local fire_blast_ready_in = resources:next_fire_blast_charge_ready_in()
+
+    local cooking_fb_charge = fire_blast_ready_in < .75 and 1 or 0
+    if resources:get_spellfire_sphere_charges(player) >= 4 and fire_blast_charges + cooking_fb_charge < 2 then
+        self:log("REJECTED: holding for spellfire_spheres")
+        return false
+    end
+
+    if resources:has_burden_of_power(player) and fire_blast_charges + cooking_fb_charge < 2 then
+        self:log("REJECTED: burden of power is up")
+        return false
+    end
+
     -- Check if GCD is active
     local gcd = core.spell_book.get_global_cooldown()
     if gcd <= 0 then
@@ -39,8 +53,8 @@ function PyroFireBlastPattern:should_start(player)
     self:log("Check: GCD is active (" .. string.format("%.2f", gcd) .. "s) ✓", 3)
 
     -- Check if we have Fire Blast charge or will have one soon
-    if resources:get_fire_blast_charges() > 0 then
-        self:log("ACCEPTED: Have Fire Blast charges (" .. resources:get_fire_blast_charges() .. ")", 2)
+    if fire_blast_charges > 0 then
+        self:log("ACCEPTED: Have Fire Blast charges (" .. fire_blast_charges .. ")", 2)
         return true
     end
 

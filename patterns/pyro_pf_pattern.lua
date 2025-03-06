@@ -31,7 +31,7 @@ function PyroPhoenixFlamePattern:should_start(player, pyro_fb_active)
 
     -- Check if GCD is active
     local gcd = core.spell_book.get_global_cooldown()
-    if gcd > 0 then
+    if gcd > 0.1 then
         self:log("REJECTED: Global cooldown is active (GCD: " .. gcd .. ")", 2)
         return false
     end

@@ -11,6 +11,7 @@ ScorchFireBlastPattern.STATES = {
     NONE = "NONE",
     SCORCH_CAST = "SCORCH_CAST",
     FIRE_BLAST_CAST = "FIRE_BLAST_CAST",
+    HOT_STREAK = "HOT_STREAK",
     FIRST_PYROBLAST_CAST = "FIRST_PYROBLAST_CAST",
     SECOND_PYROBLAST_CAST = "SECOND_PYROBLAST_CAST"
 }
@@ -32,19 +33,19 @@ function ScorchFireBlastPattern:should_start(player, patterns_active)
     self:log("Check: Last cast WAS Pyroblast ✓", 3)
 
     local gcd = core.spell_book.get_global_cooldown()
-    if gcd > 0 then
+    if gcd > 0.1 then
         self:log("REJECTED: Global cooldown is active (GCD: " .. gcd .. ")", 2)
         return false
     end
     self:log("Check: GCD is not active (" .. string.format("%.2f", gcd) .. "s) ✓", 3)
 
     -- Check if we have no Fire Blast charges
-    local fb_charges = resources:get_fire_blast_charges()
-    if fb_charges > 0 then
-        self:log("REJECTED: Still have Fire Blast charges (" .. fb_charges .. ")", 2)
-        return false
-    end
-    self:log("Check: No Fire Blast charges available ✓", 3)
+    -- local fb_charges = resources:get_fire_blast_charges()
+    -- if fb_charges > 0 then
+    --     self:log("REJECTED: Still have Fire Blast charges (" .. fb_charges .. ")", 2)
+    --     return false
+    -- end
+    -- self:log("Check: No Fire Blast charges available ✓", 3)
 
     -- Check if Combustion is active
     local combustion_remaining = resources:get_combustion_remaining(player)
@@ -100,7 +101,15 @@ function ScorchFireBlastPattern:on_spell_cast(spell_id)
         -- Fire Blast was cast
     elseif spell_id == spell_data.SPELL.FIRE_BLAST.id then
         if self.state == self.STATES.FIRE_BLAST_CAST then
-            self:log("Fire Blast cast detected - transitioning to FIRST_PYROBLAST_CAST state", 2)
+            self:log("Fire Blast cast detected - transitioning to HOT_STREAK state", 2)
+            self.state = self.STATES.HOT_STREAK
+            return true
+        end
+
+        -- Fire Blast was cast
+    elseif spell_id == spell_data.SPELL.HOT_STREAK.id then
+        if self.state == self.STATES.HOT_STREAK then
+            self:log("Hot Streak cast detected - transitioning to FIRST_PYROBLAST_CAST state", 2)
             self.state = self.STATES.FIRST_PYROBLAST_CAST
             return true
         end
@@ -162,24 +171,15 @@ function ScorchFireBlastPattern:execute(player, target)
             self.state = self.STATES.SECOND_PYROBLAST_CAST
         end
         return true
+    elseif self.state == self.STATES.HOT_STREAK then
+        self:log("waiting for hot streak")
+        return true
 
         -- State: FIRST_PYROBLAST_CAST
     elseif self.state == self.STATES.FIRST_PYROBLAST_CAST then
-        local has_hot_streak = resources:has_hot_streak(player)
-        self:log("Checking for Hot Streak before first Pyroblast (Hot Streak: " .. tostring(has_hot_streak) .. ")", 3)
-
-        local cast_end_time = player:get_active_spell_cast_end_time()
-        if cast_end_time <= 0 and has_hot_streak then
-            self:log("Attempting to cast first Pyroblast with Hot Streak", 2)
-            spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false)
-            -- No state transition here - handled by on_spell_cast
-        else
-            if cast_end_time > 0 then
-                self:log("Waiting for current cast to end", 3)
-            elseif not has_hot_streak then
-                self:log("Waiting for Hot Streak proc", 3)
-            end
-        end
+        self:log("Attempting to cast first Pyroblast with Hot Streak", 2)
+        spellcasting:cast_spell(spell_data.SPELL.PYROBLAST, target, false, false)
+        -- No state transition here - handled by on_spell_cast
         return true
 
         -- State: SECOND_PYROBLAST_CAST

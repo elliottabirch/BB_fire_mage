@@ -55,6 +55,15 @@ local SPELL = {
         last_attempt = 0,
         cast_delay = 0.30,
         is_off_gcd = true
+    },
+    HOT_STREAK = {
+        id = 48108,
+        name = "Hot Streak!",
+        priority = 1,
+        last_cast = 0,
+        last_attempt = 0,
+        cast_delay = 0.30,
+        is_off_gcd = true
     }
 
 }

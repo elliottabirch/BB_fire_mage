@@ -14,13 +14,13 @@ local CombustionOpenerPattern = BasePattern:new("Combustion Opener")
 -- Define states
 CombustionOpenerPattern.STATES = {
     NONE = "NONE",
-    BUILDER = "BUILDER",
-    PHOENIX_FLAMES_CAST = "PHOENIX_FLAMES_CAST",
-    SCORCH_OR_FIREBALL = "SCORCH_OR_FIREBALL",
-    COMBUSTION_CAST = "COMBUSTION_CAST",
-    FIRE_BLAST_CAST = "FIRE_BLAST_CAST",
-    FIRST_PYRO = "FIRST_PYRO",
-    SECOND_PYRO = "SECOND_PYRO"
+    INITIAL_SCORCH = "INITIAL_SCORCH",   -- Initial scorch to build heating up
+    PHOENIX_FLAMES = "PHOENIX_FLAMES",   -- Phoenix flames to convert heating up to hot streak
+    SCORCH_CAST = "SCORCH_CAST",         -- Scorch before combustion
+    COMBUSTION_CAST = "COMBUSTION_CAST", -- Cast combustion
+    FIRE_BLAST_CAST = "FIRE_BLAST_CAST", -- Cast fire blast during combustion
+    FIRST_PYRO = "FIRST_PYRO",           -- Cast first pyroblast
+    SECOND_PYRO = "SECOND_PYRO"          -- Cast second pyroblast
 }
 
 -- Set initial state and additional properties
@@ -53,11 +53,13 @@ function CombustionOpenerPattern:should_start(player, patterns_active)
         self:log("REJECTED: opener already activated this combustion", 2)
         return false
     end
+
     local is_casting = player:is_casting_spell()
     if is_casting then
         self:log("Waiting for current cast to finish before starting", 3)
         return false
     end
+
     local gcd = core.spell_book.get_global_cooldown()
     if gcd > 0 then
         self:log("Waiting for GCD before starting (" .. string.format("%.2f", gcd) .. "s)", 3)
@@ -89,22 +91,34 @@ function CombustionOpenerPattern:should_start(player, patterns_active)
     -- Successfully passed all checks
     self:log("ACCEPTED: Combustion CD < 2s, " .. pf_charges .. " Phoenix Flames charges, " ..
         fb_charges .. " Fire Blast charges", 1)
+
+    -- Store which state we should start in based on current buffs
+    self.start_state = self.STATES.INITIAL_SCORCH -- Default
+
+    -- Check for hot streak or heating up
+    local has_hot_streak = resources:has_hot_streak(player)
+    local has_heating_up = resources:has_heating_up(player)
+
+    if has_hot_streak then
+        self:log("Player has Hot Streak - will start with SCORCH_CAST", 1)
+        self.start_state = self.STATES.SCORCH_CAST
+    elseif has_heating_up then
+        self:log("Player has Heating Up - will start with PHOENIX_FLAMES", 1)
+        self.start_state = self.STATES.PHOENIX_FLAMES
+    else
+        self:log("Player has no procs - will start with INITIAL_SCORCH", 1)
+        self.start_state = self.STATES.INITIAL_SCORCH
+    end
+
     return true
 end
 
 function CombustionOpenerPattern:start()
     self.active = true
-    -- If player is moving, skip the builder phase
-    local player = core.object_manager.get_local_player()
-    if player and player:is_moving() then
-        self.state = self.STATES.PHOENIX_FLAMES_CAST
-        self:log("STARTED (player moving) - State: " .. self.state, 1)
-    else
-        self.state = self.STATES.BUILDER
-        self:log("STARTED (player stationary) - State: " .. self.state, 1)
-    end
+    self.state = self.start_state or self.STATES.INITIAL_SCORCH
     self.start_time = core.time()
     self.has_activated_this_combustion = false
+    self:log("STARTED - State: " .. self.state, 1)
 end
 
 function CombustionOpenerPattern:reset()
@@ -112,6 +126,7 @@ function CombustionOpenerPattern:reset()
     self.active = false
     self.state = self.STATES.NONE
     self.start_time = 0
+    self.start_state = nil
     self:log("RESET (from " .. prev_state .. " state)", 1)
 end
 
@@ -136,93 +151,42 @@ function CombustionOpenerPattern:execute(player, target)
     local gcd = core.spell_book.get_global_cooldown()
     local has_hot_streak = resources:has_hot_streak(player)
     local has_heating_up = resources:has_heating_up(player)
-    local is_moving = player:is_moving()
 
-    -- State: BUILDER (cast Fireball if not moving)
-    if self.state == self.STATES.BUILDER then
-        if has_hot_streak then
-            self:log("player has hot streak, moving to SCORCH_OR_FIREBALL")
-            self.state = self.STATES.SCORCH_OR_FIREBALL
-            return true
-        end
-
-        if has_heating_up then
-            self:log("player has heating up, moving to PHOENIX_FLAMES")
-            self.state = self.STATES.PHOENIX_FLAMES_CAST
-            return true
-        end
-
-        if is_moving then
-            self:log("Player is moving, skipping to Phoenix Flames", 2)
-            self.state = self.STATES.PHOENIX_FLAMES_CAST
-            return true
-        end
-
-        if is_casting then
-            self:log("Already casting, waiting for cast to finish", 3)
-            return true
-        end
-
-        self:log("Attempting to cast Fireball as builder", 2)
-        if spellcasting:cast_spell(spell_data.SPELL.FIREBALL, target, false, false) then
-            self:log("Fireball cast initiated", 2)
-        else
-            self:log("Failed to cast Fireball, will retry", 2)
-        end
-        return true
-
-        -- State: PHOENIX_FLAMES_CAST
-    elseif self.state == self.STATES.PHOENIX_FLAMES_CAST then
-        -- Wait for any existing cast to finish
-        if has_hot_streak then
-            self:log("player has hot streak, moving to SCORCH_OR_FIREBALL")
-            self.state = self.STATES.SCORCH_OR_FIREBALL
-            return true
-        end
-        if is_casting then
-            self:log("Waiting for current cast to finish before Phoenix Flames", 3)
-            return true
-        end
-
-        if gcd ~= 0 then
-            self:log("Waiting for GCD before Phoenix Flames (" .. string.format("%.2f", gcd) .. "s)", 3)
-            return true
-        end
-
-        self:log("Attempting to cast Phoenix Flames", 2)
-        if spellcasting:cast_spell(spell_data.SPELL.PHOENIX_FLAMES, target, false, false) then
-            self:log("Phoenix Flames cast initiated", 2)
-        else
-            self:log("Failed to cast Phoenix Flames, will retry", 2)
-        end
-        return true
-
-        -- State: SCORCH_OR_FIREBALL
-    elseif self.state == self.STATES.SCORCH_OR_FIREBALL then
-        -- Wait for any existing cast or GCD
-        if is_casting then
-            self:log("Waiting for current cast to finish before Scorch/Fireball", 3)
-            return true
-        end
-
-        if gcd > 0.1 then
-            self:log("Waiting for GCD before Scorch/Fireball (" .. string.format("%.2f", gcd) .. "s)", 3)
-            return true
-        end
-
-        if is_moving then
-            self:log("Player is moving, casting Scorch", 2)
+    -- State: INITIAL_SCORCH (cast scorch to build heating up)
+    if self.state == self.STATES.INITIAL_SCORCH then
+        -- Cast Scorch to build Heating Up
+        if not is_casting and gcd == 0 then
+            self:log("Casting Scorch to build Heating Up", 2)
             if spellcasting:cast_spell(spell_data.SPELL.SCORCH, target, false, false) then
                 self:log("Scorch cast initiated", 2)
             else
                 self:log("Failed to cast Scorch, will retry", 2)
             end
-        else
-            self:log("Player is stationary, casting Fireball", 2)
-            if spellcasting:cast_spell(spell_data.SPELL.FIREBALL, target, false, false) then
-                self:log("Fireball cast initiated", 2)
+        end
+        return true
+
+        -- State: PHOENIX_FLAMES (cast to convert heating up to hot streak)
+    elseif self.state == self.STATES.PHOENIX_FLAMES then
+        -- Cast Phoenix Flames to convert Heating Up to Hot Streak
+        if not is_casting and gcd == 0 then
+            self:log("Casting Phoenix Flames to convert Heating Up to Hot Streak", 2)
+            if spellcasting:cast_spell(spell_data.SPELL.PHOENIX_FLAMES, target, false, false) then
+                self:log("Phoenix Flames cast initiated", 2)
             else
-                self:log("Failed to cast Fireball, will retry", 2)
+                self:log("Failed to cast Phoenix Flames, will retry", 2)
+            end
+        end
+        return true
+
+        -- State: SCORCH_CAST (cast scorch before combustion)
+    elseif self.state == self.STATES.SCORCH_CAST then
+        -- Cast Scorch before Combustion
+        if not is_casting and gcd == 0 then
+            self:log("Casting Scorch before Combustion", 2)
+            if spellcasting:cast_spell(spell_data.SPELL.SCORCH, target, false, false) then
+                self:log("Scorch cast initiated", 2)
+            else
+                self:log("Failed to cast Scorch, will retry", 2)
             end
         end
         return true
@@ -235,6 +199,7 @@ function CombustionOpenerPattern:execute(player, target)
             self:log("Waiting for Combustion cooldown (" .. string.format("%.2f", combustion_cd) .. "s)", 3)
             return true
         end
+
         -- Wait for any existing cast or GCD
         if is_casting then
             local remaining_cast_time = (cast_end_time - current_time) / 1000
@@ -252,9 +217,16 @@ function CombustionOpenerPattern:execute(player, target)
                 return true
             end
         else
-            self:reset()
-            self:log("combustion failed to go off before end of cast")
+            self:log("Attempting to cast Combustion", 2)
+            if spellcasting:cast_spell(spell_data.SPELL.COMBUSTION, target, false, false) then
+                self:log("Combustion cast initiated", 2)
+                self.has_activated_this_combustion = true
+                return true
+            else
+                self:log("Failed to cast Combustion, will retry", 2)
+            end
         end
+        return true
 
         -- State: FIRE_BLAST_CAST
     elseif self.state == self.STATES.FIRE_BLAST_CAST then
@@ -266,16 +238,15 @@ function CombustionOpenerPattern:execute(player, target)
         end
 
         if has_hot_streak then
-            self:log("skipping FB to because we have hot streak already", 2)
-            self.state = self.STATES.FIRST_PYRO
+            self:log("Skipping FB because we have hot streak already", 2)
+            self.state = self.STATES.COMBUSTION_CAST
             return true
         end
-
 
         self:log("Attempting to cast Fire Blast", 2)
         if is_casting then
             local remaining_cast_time = (cast_end_time - current_time) / 1000
-            if remaining_cast_time < config.combust_precast_time / 1000 then
+            if remaining_cast_time < (config.combust_precast_time + 100) / 1000 then
                 if spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false) then
                     self:log("Fire Blast cast initiated", 2)
                 else
@@ -283,8 +254,11 @@ function CombustionOpenerPattern:execute(player, target)
                 end
             end
         else
-            self:reset()
-            self:log("resetting because fire blast was not cast in time", 2)
+            if spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false) then
+                self:log("Fire Blast cast initiated", 2)
+            else
+                self:log("Failed to cast Fire Blast, will retry", 2)
+            end
         end
         return true
 
@@ -334,43 +308,36 @@ function CombustionOpenerPattern:on_spell_cast(spell_id)
     self:log("Processing spell cast: " .. spell_id, 3)
 
     -- Track state transitions based on spell casts
-    if spell_id == spell_data.SPELL.FIREBALL.id then
-        self:log("Fireball cast detected", 2)
-        if self.state == self.STATES.BUILDER then
-            self.state = self.STATES.PHOENIX_FLAMES_CAST
-            self:log("State advanced to PHOENIX_FLAMES_CAST after Fireball cast", 2)
+    if spell_id == spell_data.SPELL.SCORCH.id then
+        self:log("Scorch cast detected", 2)
+        if self.state == self.STATES.INITIAL_SCORCH then
+            self.state = self.STATES.PHOENIX_FLAMES
+            self:log("State advanced to COMBUSTION_CAST after Scorch cast", 2)
             return true
-        elseif self.state == self.STATES.SCORCH_OR_FIREBALL then
-            self.state = self.STATES.COMBUSTION_CAST
-            self:log("State advanced to COMBUSTION_CAST after Fireball cast", 2)
+        elseif self.state == self.STATES.SCORCH_CAST then
+            self.state = self.STATES.FIRE_BLAST_CAST
+            self:log("State advanced to COMBUSTION_CAST after Scorch cast", 2)
             return true
         end
     elseif spell_id == spell_data.SPELL.PHOENIX_FLAMES.id then
         self:log("Phoenix Flames cast detected", 2)
-        if self.state == self.STATES.PHOENIX_FLAMES_CAST then
-            self.state = self.STATES.SCORCH_OR_FIREBALL
-            self:log("State advanced to SCORCH_OR_FIREBALL after Phoenix Flames cast", 2)
-            return true
-        end
-    elseif spell_id == spell_data.SPELL.SCORCH.id then
-        self:log("Scorch cast detected", 2)
-        if self.state == self.STATES.SCORCH_OR_FIREBALL then
-            self.state = self.STATES.COMBUSTION_CAST
-            self:log("State advanced to COMBUSTION_CAST after Scorch cast", 2)
+        if self.state == self.STATES.PHOENIX_FLAMES then
+            self.state = self.STATES.SCORCH_CAST
+            self:log("State advanced to SCORCH_CAST after pheonix flames cast", 2)
             return true
         end
     elseif spell_id == spell_data.SPELL.COMBUSTION.id then
         self:log("Combustion cast detected", 2)
-        if self.state == self.STATES.COMBUSTION_CAST or self.state == self.STATES.SCORCH_OR_FIREBALL then
+        if self.state == self.STATES.COMBUSTION_CAST then
             self.has_activated_this_combustion = true
-            self.state = self.STATES.FIRE_BLAST_CAST
+            self.state = self.STATES.FIRST_PYRO
             self:log("State advanced to FIRE_BLAST_CAST after Combustion cast", 2)
             return true
         end
     elseif spell_id == spell_data.SPELL.FIRE_BLAST.id then
         self:log("Fire Blast cast detected", 2)
         if self.state == self.STATES.FIRE_BLAST_CAST then
-            self.state = self.STATES.FIRST_PYRO
+            self.state = self.STATES.COMBUSTION_CAST
             self:log("State advanced to FIRST_PYRO after Fire Blast cast", 2)
             return true
         end

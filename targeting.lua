@@ -4,6 +4,7 @@ local Targeting = {
 }
 
 local target_selector = require("common/modules/target_selector")
+---@type unit_helper
 local unit_helper = require("common/utility/unit_helper")
 local pvp_helper = require("common/utility/pvp_helper")
 local logger = require("logger")
@@ -112,6 +113,10 @@ function Targeting:get_best_target()
 
     local most_clustered_target = nil
     local most_clustered_count = 0
+    local player_target = player:get_target()
+    if unit_helper:is_valid_enemy(player_target) then
+        return player_target
+    end
 
     -- Process each potential target
     for i, target in ipairs(targets_list) do
@@ -126,15 +131,16 @@ function Targeting:get_best_target()
             end
 
             -- Count nearby enemies for clustering check
-            local nearby_count = self:count_nearby_enemies(target, targets_list, 8) -- 8 yards clustering radius
+            local nearby_count = unit_helper:get_enemy_list_around(target:get_position(), 8, false, true, false, false) -- 8 yards clustering radius
 
             -- Track most clustered target
-            if nearby_count > most_clustered_count then
+            if #nearby_count > most_clustered_count then
                 most_clustered_target = target
-                most_clustered_count = nearby_count
+                most_clustered_count = #nearby_count
             end
         end
     end
+
 
     -- Decision logic
     if combustion_is_up and highest_health_target then
@@ -149,32 +155,9 @@ function Targeting:get_best_target()
         return highest_health_target
     end
 
+
     logger:log("No valid targets found", 3)
     return nil
-end
-
--- Helper method to count nearby enemies
----@param target game_object The central target
----@param targets_list table<game_object> List of all potential targets
----@param radius number Detection radius in yards
----@return number Count of enemies within radius
-function Targeting:count_nearby_enemies(target, targets_list, radius)
-    local count = 0
-    local target_pos = target:get_position()
-
-    for _, other in ipairs(targets_list) do
-        if other ~= target and not pvp_helper:is_damage_immune(other, pvp_helper.damage_type_flags.MAGICAL) then
-            local other_pos = other:get_position()
-            local squared_dist = target_pos:squared_dist_to(other_pos)
-            local squared_radius = radius * radius
-
-            if squared_dist <= squared_radius then
-                count = count + 1
-            end
-        end
-    end
-
-    return count
 end
 
 ---@return game_object|nil
