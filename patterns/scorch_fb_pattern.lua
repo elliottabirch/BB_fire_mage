@@ -107,7 +107,7 @@ function ScorchFireBlastPattern:on_spell_cast(spell_id)
         end
 
         -- Fire Blast was cast
-    elseif spell_id == spell_data.SPELL.HOT_STREAK.id then
+    elseif spell_id == spell_data.CUSTOM_BUFF_DATA.HOT_STREAK.id then
         if self.state == self.STATES.HOT_STREAK then
             self:log("Hot Streak cast detected - transitioning to FIRST_PYROBLAST_CAST state", 2)
             self.state = self.STATES.FIRST_PYROBLAST_CAST

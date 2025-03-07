@@ -1,6 +1,7 @@
 local spellcasting = require("spellcasting")
 local spell_data = require("spell_data")
 local logger = require("logger")
+local resources = require("resources")
 
 ---@class PatternManager
 ---@field active_pattern BasePattern|nil The currently active pattern
@@ -22,15 +23,27 @@ end
 ---@return boolean True if a pattern is active and executing
 function PatternManager:execute_active_pattern(player, target)
     if not self.active_pattern then
+        self:reset_pattern()
         return false
+    end
+
+    self.active_pattern:log("pattern still active")
+
+    local default_result = self.active_pattern:execute_default(player, target)
+    if default_result then
+        self.active_pattern:log("default result returns true")
+        return true
     end
 
     local result = self.active_pattern:execute(player, target)
     -- If execution returns false, pattern is finished
-    if not result then
-        self.active_pattern = nil
+    if result then
+        self.active_pattern:log("normal result is returning")
+        return true
     end
-    return true
+    self.active_pattern:log("no result is returning")
+    self:reset_pattern()
+    return false
 end
 
 ---@param player game_object The player object
@@ -56,6 +69,12 @@ function PatternManager:select_pattern(player, context)
     end
 
     return false
+end
+
+---@param player game_object The player object
+function PatternManager:get_pattern_start_conditions(player)  
+    local remaining_cast_time = resources:get_remaining_cast_time(player)
+    local gcd = 
 end
 
 ---@param context table Context data to determine pattern priority
@@ -96,14 +115,24 @@ function PatternManager:handle_spell_cast(spell_id)
     end
 
     if not self.active_pattern then
-        return
+        self:reset_pattern()
+        return false
+    end
+
+    if self.active_pattern:advance_state(spell_id) then
+        logger:log("advanced state through generic advancement")
+        return true
     end
 
     -- Allow patterns to react to spell casts
     -- This is useful for interrupting patterns when certain spells are manually cast
     if self.active_pattern.on_spell_cast then
         self.active_pattern:on_spell_cast(spell_id)
+        return true
     end
+
+    self:reset_pattern()
+    return false
 end
 
 ---@param player game_object The player object
@@ -113,7 +142,7 @@ function PatternManager:handle_combustion_state_change(player, was_active, is_ac
         for name, pattern in pairs(self.patterns) do
             if name == "pyro_fb" or name == "pyro_pf" or name == "scorch_fb" then
                 if pattern.active then
-                    pattern:reset()
+                    self:reset_pattern()
                 end
             end
         end

@@ -77,9 +77,6 @@ function Targeting:get_scorch_target()
     end
 
     if low_health_target then
-        logger:log("Selected scorch target with " ..
-            ((low_health_target:get_health() / low_health_target:get_max_health()) * 100) ..
-            "% health", 2)
         return low_health_target
     end
 

@@ -56,16 +56,17 @@ local SPELL = {
         cast_delay = 0.30,
         is_off_gcd = true
     },
+
+
+}
+
+local CUSTOM_BUFF_DATA = {
     HOT_STREAK = {
         id = 48108,
         name = "Hot Streak!",
-        priority = 1,
         last_cast = 0,
         last_attempt = 0,
-        cast_delay = 0.30,
-        is_off_gcd = true
     }
-
 }
 
 local BUFF = {
@@ -82,8 +83,15 @@ for key, spell in pairs(SPELL) do
     SPELL_BY_ID[spell.id] = spell
 end
 
+local BUFF_BY_ID = {}
+for key, buff in pairs(CUSTOM_BUFF_DATA) do
+    BUFF_BY_ID[buff.id] = buff
+end
+
 return {
     SPELL = SPELL,
     BUFF = BUFF,
-    SPELL_BY_ID = SPELL_BY_ID
+    SPELL_BY_ID = SPELL_BY_ID,
+    CUSTOM_BUFF_DATA = CUSTOM_BUFF_DATA,
+    BUFF_BY_ID = BUFF_BY_ID
 }

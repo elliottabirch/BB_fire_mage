@@ -25,7 +25,6 @@ function SpellTracker:update(player)
     local active_spell_id = player:get_active_spell_id()
     local cast_start_time = player:get_active_spell_cast_start_time()
     local cast_end_time = player:get_active_spell_cast_end_time()
-    logger:log("end time" .. cast_end_time, 2)
     -- If we're not casting anything, reset tracking
     if active_spell_id == 0 then
         if self.current_cast.spell_id and core.game_time() < self.current_cast.expected_end_time - SPELL_INTERRUPT_FLEXIBILITY then

@@ -174,7 +174,7 @@ function PyroFireBlastPattern:on_spell_cast(spell_id)
         return true
     end
 
-    return false
+    return true
 end
 
 return PyroFireBlastPattern
