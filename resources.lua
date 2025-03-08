@@ -66,6 +66,22 @@ function Resources:get_phoenix_flames_charges()
     return core.spell_book.get_spell_charge(SPELL.PHOENIX_FLAMES.id)
 end
 
+---@return number
+function Resources:next_phoenix_flames_charge_ready_in()
+    if self:get_fire_blast_charges() == 2 then
+        return 0
+    end
+
+    local charge_cd = core.spell_book.get_spell_charge_cooldown_duration(SPELL.PHOENIX_FLAMES.id)
+    local start_time = core.spell_book.get_spell_charge_cooldown_start_time(SPELL.PHOENIX_FLAMES.id)
+
+    if start_time == 0 then
+        return 0
+    end
+
+    return (start_time + charge_cd - core.game_time())
+end
+
 ---@param seconds number
 ---@return number
 function Resources:phoenix_flames_ready_in(seconds)
