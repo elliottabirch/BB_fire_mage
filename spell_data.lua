@@ -8,7 +8,7 @@ local SPELL = {
         priority = 1,
         last_cast = 0,
         last_attempt = 0,
-        cast_delay = 0.20,
+        cast_delay = 0.10,
         is_off_gcd = false
     },
     FIRE_BLAST = {
@@ -17,7 +17,7 @@ local SPELL = {
         priority = 1,
         last_cast = 0,
         last_attempt = 0,
-        cast_delay = 0.40,
+        cast_delay = 0.30,
         is_off_gcd = true
     },
     PYROBLAST = {
@@ -26,7 +26,7 @@ local SPELL = {
         priority = 1,
         last_cast = 0,
         last_attempt = 0,
-        cast_delay = 0.20,
+        cast_delay = 0.10,
         is_off_gcd = false
     },
     PHOENIX_FLAMES = {
@@ -35,7 +35,7 @@ local SPELL = {
         priority = 1,
         last_cast = 0,
         last_attempt = 0,
-        cast_delay = 0.20,
+        cast_delay = 0.10,
         is_off_gcd = false
     },
     SCORCH = {
@@ -44,7 +44,7 @@ local SPELL = {
         priority = 1,
         last_cast = 0,
         last_attempt = 0,
-        cast_delay = 0.20,
+        cast_delay = 0.10,
         is_off_gcd = false
     },
     COMBUSTION = {
@@ -53,7 +53,7 @@ local SPELL = {
         priority = 1,
         last_cast = 0,
         last_attempt = 0,
-        cast_delay = 0.30,
+        cast_delay = 0.10,
         is_off_gcd = true
     },
 

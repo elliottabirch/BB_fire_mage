@@ -41,10 +41,7 @@ ScorchPattern.step_logic = {
             target)
     end,
     [ScorchPattern.STATES.HOT_STREAK] = nil,
-    [ScorchPattern.STATES.PYROBLAST_CAST] = function(player, target)
-        return ScorchPattern.handle_pyroblast(ScorchPattern, player,
-            target)
-    end
+    [ScorchPattern.STATES.PYROBLAST_CAST] = spell_data.SPELL.PYROBLAST
 }
 
 
@@ -93,14 +90,11 @@ function ScorchPattern:should_start(player, context)
 
     local fb_charges = resources:get_fire_blast_charges()
     local fire_blast_ready_in = resources:next_fire_blast_charge_ready_in()
-    self:log("--> fireblast_ready_in: " .. tostring(fire_blast_ready_in))
-    self:log("--> remaining cast time: " .. (resources:get_remaining_cast_time(player)) - 250)
 
     local cooking_fb_charge = fire_blast_ready_in < (resources:get_remaining_cast_time(player)) - 250 and 1 or
         0
     local has_less_than_cap_FB_charges = fb_charges + cooking_fb_charge <
         core.spell_book.get_spell_charge_max(spell_data.SPELL.FIRE_BLAST.id)
-
 
     -- Check if we have Heating Up
     if not resources:has_heating_up(player) then

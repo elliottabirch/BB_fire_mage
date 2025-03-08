@@ -95,9 +95,20 @@ function BasePattern:execute_default(player, target)
         -- Check if the cast spell matches what we expect for the current step
         local step_name = self.steps[self.current_step]
         local expected_logic = self.step_logic[step_name]
+
+        if step_name == "NONE" then
+            self:log("RESETTING: step is NONE")
+            return false
+        end
+        if expected_logic == nil then
+            self:log("nil logic for step: " .. step_name, 2)
+            return true
+        end
+
+
         if type(expected_logic) == "table" then
-            self:log("---> executing current_step " .. self.current_step)
-            self:log("---> executing state " .. self.state)
+            self:log("---> AUTO-executing current_step " .. self.current_step)
+            self:log("---> AUTO-executing state " .. self.state)
             if spellcasting:cast_spell(expected_logic, target, false, false) then
                 self:log("successfully casted " .. expected_logic.name)
             else
@@ -110,15 +121,27 @@ function BasePattern:execute_default(player, target)
         else
             self:log("---> no logic for current_step " .. self.current_step)
             self:log("---> no logic for state " .. self.state)
-
-            -- self:log("---> no logic for step name " .. expected_logic)
-            return true
+            return false
         end
+        return true
     end
     self:log("advance_state is not setup correctly")
     if not self.steps then self:log("NO STEPS SETUP") end
     if not self.current_step then self:log("NO CURRENT STEP SETUP") end
     if not self.step_logic then self:log("NO STEP LOGIC SETUP") end
+
+    return false
+end
+
+function BasePattern:advance_state_is_setup()
+    -- If the pattern defines steps and expected spells
+    if self.steps and self.current_step and self.expected_spells then
+        return true
+    end
+    self:log("advance_state is not setup correctly")
+    if not self.steps then self:log("NO STEPS SETUP") end
+    if not self.current_step then self:log("NO CURRENT STEP SETUP") end
+    if not self.expected_spells then self:log("NO EXPECTED SPELLS SETUP") end
 
     return false
 end
@@ -137,27 +160,15 @@ function BasePattern:advance_state(spell_id)
             if next_state then
                 self:log("Advancing state to " .. next_state, 2)
                 self.state = next_state
-                return true
             else
                 -- If there's no next step, we're done
                 self:log("Pattern complete - all steps executed", 1)
                 self:complete()
                 return false
             end
-        else
-            self:log("---> current_step " .. self.current_step)
-            self:log("---> current_step " .. self.state)
-            self:log("Unexpected spell cast: got " .. spell_id ..
-                " but expected " .. (expected_spell_id or "none"), 2)
-            return true
         end
     end
-    self:log("advance_state is not setup correctly")
-    if not self.steps then self:log("NO STEPS SETUP") end
-    if not self.current_step then self:log("NO CURRENT STEP SETUP") end
-    if not self.expected_spells then self:log("NO EXPECTED SPELLS SETUP") end
-
-    return false
+    return true
 end
 
 function BasePattern:complete()

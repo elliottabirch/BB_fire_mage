@@ -30,6 +30,7 @@ local pattern_manager = require("patterns/pattern_manager")
 local pyro_fb_pattern = require("patterns/pyro_fb_pattern")
 local pyro_pf_pattern = require("patterns/pyro_pf_pattern")
 local scorch_fb_pattern = require("patterns/scorch_fb_pattern")
+local scorch_fb_double_pyro_pattern = require("patterns/scorch_fb_double_pyro_pattern")
 local combustion_opener_pattern = require("patterns/combustion_opener_pattern")
 local fireball_hotstreak_pattern = require("patterns/fireball_hotstreak_pattern")
 local scorch_pattern = require("patterns/scorch_pattern")
@@ -44,6 +45,7 @@ pattern_manager:register_pattern("scorch_fb", scorch_fb_pattern)
 pattern_manager:register_pattern("combustion_opener", combustion_opener_pattern)
 pattern_manager:register_pattern("fireball_hotstreak", fireball_hotstreak_pattern)
 pattern_manager:register_pattern("scorch_pattern", scorch_pattern)
+pattern_manager:register_pattern("scorch_fb_double_pyro_pattern", scorch_fb_double_pyro_pattern)
 
 -- Save the last combustion state for detecting state changes
 local last_combustion_state = false

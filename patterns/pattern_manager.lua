@@ -82,7 +82,7 @@ function PatternManager:should_start_pattern_global(player, pattern)
     local gcd = core.spell_book.get_global_cooldown()
 
     local cast_remaining = math.max(gcd, remaining_cast_time)
-    if cast_remaining > .1 then
+    if cast_remaining > .2 then
         pattern:log("FAILED because gcd or cast time remaining: " .. cast_remaining, 2)
         return false
     end
@@ -102,6 +102,7 @@ function PatternManager:get_pattern_priority(context)
             "combustion_opener",
             "pyro_fb",
             "pyro_pf",
+            "scorch_fb_double_pyro_pattern",
             "scorch_fb"
         }
     else
@@ -129,7 +130,6 @@ function PatternManager:handle_spell_cast(spell_id)
     end
 
     if not self.active_pattern then
-        self:reset_pattern()
         return false
     end
 
@@ -137,14 +137,13 @@ function PatternManager:handle_spell_cast(spell_id)
     -- Allow patterns to react to spell casts
     -- This is useful for interrupting patterns when certain spells are manually cast
     if self.active_pattern.on_spell_cast then
-        self.active_pattern:on_spell_cast(spell_id)
-        return true
+        return self.active_pattern:on_spell_cast(spell_id)
     end
 
 
-    if self.active_pattern:advance_state(spell_id) then
+    if self.active_pattern:advance_state_is_setup() then
         logger:log("advanced state through generic advancement")
-        return true
+        return self.active_pattern:advance_state(spell_id)
     end
 
     self:reset_pattern()
