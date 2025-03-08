@@ -54,18 +54,6 @@ function CombustionOpenerPattern:should_start(player, patterns_active)
         return false
     end
 
-    local is_casting = player:is_casting_spell()
-    if is_casting then
-        self:log("Waiting for current cast to finish before starting", 3)
-        return false
-    end
-
-    local gcd = core.spell_book.get_global_cooldown()
-    if gcd > 0 then
-        self:log("Waiting for GCD before starting (" .. string.format("%.2f", gcd) .. "s)", 3)
-        return false
-    end
-
     -- Check combustion CD condition
     local combustion_cd = core.spell_book.get_spell_cooldown(spell_data.SPELL.COMBUSTION.id)
     self:log("Combustion CD: " .. combustion_cd, 3)
@@ -246,7 +234,7 @@ function CombustionOpenerPattern:execute(player, target)
         self:log("Attempting to cast Fire Blast", 2)
         if is_casting then
             local remaining_cast_time = (cast_end_time - current_time) / 1000
-            if remaining_cast_time < (config.combust_precast_time + 100) / 1000 then
+            if remaining_cast_time < (config.combust_precast_time + 200) / 1000 then
                 if spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false) then
                     self:log("Fire Blast cast initiated", 2)
                 else

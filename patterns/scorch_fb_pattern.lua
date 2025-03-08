@@ -32,22 +32,6 @@ function ScorchFireBlastPattern:should_start(player, patterns_active)
     end
     self:log("Check: Last cast WAS Pyroblast ✓", 3)
 
-    local gcd = core.spell_book.get_global_cooldown()
-    if gcd > 0.1 then
-        self:log("REJECTED: Global cooldown is active (GCD: " .. gcd .. ")", 2)
-        return false
-    end
-    self:log("Check: GCD is not active (" .. string.format("%.2f", gcd) .. "s) ✓", 3)
-
-    -- Check if we have no Fire Blast charges
-    -- local fb_charges = resources:get_fire_blast_charges()
-    -- if fb_charges > 0 then
-    --     self:log("REJECTED: Still have Fire Blast charges (" .. fb_charges .. ")", 2)
-    --     return false
-    -- end
-    -- self:log("Check: No Fire Blast charges available ✓", 3)
-
-    -- Check if Combustion is active
     local combustion_remaining = resources:get_combustion_remaining(player)
 
     -- Calculate if Fire Blast will be ready by the end of Scorch cast

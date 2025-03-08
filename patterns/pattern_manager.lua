@@ -35,9 +35,8 @@ function PatternManager:execute_active_pattern(player, target)
         return true
     end
 
-    local result = self.active_pattern:execute(player, target)
     -- If execution returns false, pattern is finished
-    if result then
+    if self.active_pattern.execute and self.active_pattern:execute(player, target) then
         self.active_pattern:log("normal result is returning")
         return true
     end
@@ -61,7 +60,7 @@ function PatternManager:select_pattern(player, context)
     -- Try to start patterns in priority order
     for _, pattern_name in ipairs(pattern_priority) do
         local pattern = self.patterns[pattern_name]
-        if pattern and pattern:should_start(player, context) then
+        if pattern and self:should_start_pattern_global(player, pattern) and pattern:should_start(player, context) then
             self.active_pattern = pattern
             pattern:start()
             return true
@@ -72,9 +71,24 @@ function PatternManager:select_pattern(player, context)
 end
 
 ---@param player game_object The player object
-function PatternManager:get_pattern_start_conditions(player)  
+---@param pattern BasePattern The player object
+function PatternManager:should_start_pattern_global(player, pattern)
+    if pattern.start_on_gcd then
+        pattern:log("CONTINUED because pattern is off gcd")
+        return true
+    end
+
     local remaining_cast_time = resources:get_remaining_cast_time(player)
-    local gcd = 
+    local gcd = core.spell_book.get_global_cooldown()
+
+    local cast_remaining = math.max(gcd, remaining_cast_time)
+    if cast_remaining > .1 then
+        pattern:log("FAILED because gcd or cast time remaining: " .. cast_remaining, 2)
+        return false
+    end
+    pattern:log("CONTINUED because gcd or cast time remaining: " .. cast_remaining, 2)
+
+    return true
 end
 
 ---@param context table Context data to determine pattern priority
@@ -119,15 +133,17 @@ function PatternManager:handle_spell_cast(spell_id)
         return false
     end
 
-    if self.active_pattern:advance_state(spell_id) then
-        logger:log("advanced state through generic advancement")
-        return true
-    end
 
     -- Allow patterns to react to spell casts
     -- This is useful for interrupting patterns when certain spells are manually cast
     if self.active_pattern.on_spell_cast then
         self.active_pattern:on_spell_cast(spell_id)
+        return true
+    end
+
+
+    if self.active_pattern:advance_state(spell_id) then
+        logger:log("advanced state through generic advancement")
         return true
     end
 

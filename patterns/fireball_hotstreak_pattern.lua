@@ -6,6 +6,8 @@ local spell_data = require("spell_data")
 ---@class FireballHotstreakPattern : BasePattern
 local FireballHotstreakPattern = BasePattern:new("Fireball->HotStreak pattern")
 
+FireballHotstreakPattern.start_on_gcd = true
+
 -- Define states
 FireballHotstreakPattern.STATES = {
     NONE = "NONE",

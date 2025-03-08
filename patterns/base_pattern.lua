@@ -1,3 +1,5 @@
+local spellcasting = require("spellcasting")
+local spell_data = require("spell_data")
 ---@class BasePattern
 ---@field active boolean
 ---@field state string
@@ -5,11 +7,14 @@
 ---@field current_step number The current step in the pattern sequence
 ---@field steps table
 ---@field expected_spells table<number, string> Map of step → expected spell ID
+---@field start_on_gcd boolean
+
 
 local BasePattern = {
     active = false,
     state = "NONE",
-    start_time = 0
+    start_time = 0,
+    start_on_gcd = false
 }
 
 local logger = require("logger")
@@ -90,8 +95,15 @@ function BasePattern:execute_default(player, target)
         -- Check if the cast spell matches what we expect for the current step
         local step_name = self.steps[self.current_step]
         local expected_logic = self.step_logic[step_name]
-
-        if expected_logic then
+        if type(expected_logic) == "table" then
+            self:log("---> executing current_step " .. self.current_step)
+            self:log("---> executing state " .. self.state)
+            if spellcasting:cast_spell(expected_logic, target, false, false) then
+                self:log("successfully casted " .. expected_logic.name)
+            else
+                self:log("casting " .. expected_logic.name .. "  failed, retrying")
+            end
+        elseif expected_logic then
             self:log("---> executing current_step " .. self.current_step)
             self:log("---> executing state " .. self.state)
             return expected_logic(player, target)

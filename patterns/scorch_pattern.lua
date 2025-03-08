@@ -10,6 +10,8 @@ local buff_manager = require("common/modules/buff_manager")
 ---@field scorch_end_time number The expected end time of the Scorch cast
 local ScorchPattern = BasePattern:new("Scorch Pattern")
 
+ScorchPattern.start_on_gcd = true
+
 -- Define states
 ScorchPattern.STATES = {
     NONE = "NONE",
@@ -82,10 +84,9 @@ function ScorchPattern:should_start(player, context)
     local STARTING_STATE = self.STATES.HOT_STREAK
     local STARTING_STEP = 3
     self:log("Evaluating conditions:", 3)
-    local is_casting = player:is_casting_spell()
     local active_spell_id = player:get_active_spell_id()
 
-    if not is_casting or active_spell_id ~= spell_data.SPELL.SCORCH.id then
+    if active_spell_id ~= spell_data.SPELL.SCORCH.id then
         self:log("REJECTED: Not casting Scorch", 2)
         return false
     end

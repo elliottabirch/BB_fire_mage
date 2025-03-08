@@ -29,14 +29,6 @@ function PyroPhoenixFlamePattern:should_start(player, pyro_fb_active)
     end
     self:log("Check: Last cast WAS Pyroblast ✓", 3)
 
-    -- Check if GCD is active
-    local gcd = core.spell_book.get_global_cooldown()
-    if gcd > 0.1 then
-        self:log("REJECTED: Global cooldown is active (GCD: " .. gcd .. ")", 2)
-        return false
-    end
-    self:log("Check: GCD is not active (" .. string.format("%.2f", gcd) .. "s) ✓", 3)
-
     -- Check if we have Phoenix Flames charge
     local pf_charges = resources:get_phoenix_flames_charges()
     if pf_charges > 0 then
