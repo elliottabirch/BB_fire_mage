@@ -4,7 +4,7 @@ local spellcasting                      = require("spellcasting")
 local spell_data                        = require("spell_data")
 
 ---@class PyroPhoenixFlamePattern : BasePattern
-local PyroPhoenixFlamePattern           = BasePattern:new("Pyro->PF pattern")
+local PyroPhoenixFlamePattern           = BasePattern:new("pyro_pf")
 
 -- Define states
 PyroPhoenixFlamePattern.STATES          = {
@@ -59,8 +59,8 @@ function PyroPhoenixFlamePattern:should_start()
     local cooking_pf_charge = pf_ready_in < gcd - .1 and 1 or 0
     if pf_charges + cooking_pf_charge > 0 then
         self:log(
-        "ACCEPTED: Have Phoenix Flames charges (" ..
-        pf_charges .. ")  and (" .. cooking_pf_charge .. " ) will be up before gcd ends", 2)
+            "ACCEPTED: Have Phoenix Flames charges (" ..
+            pf_charges .. ")  and (" .. cooking_pf_charge .. " ) will be up before gcd ends", 2)
         return true
     end
 

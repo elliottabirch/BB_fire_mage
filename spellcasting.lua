@@ -12,12 +12,34 @@ local logger = require("logger")
 local spell_data = require("spell_data")
 local targeting = require("targeting")
 
+
+Spellcasting.recent_casts = {}
 ---@param spell table
 function Spellcasting:set_last_cast(spell)
     local current_time = core.time()
     spell.last_cast = current_time
     self.last_cast = spell.name
     self.last_cast_time = current_time
+
+    -- Track last 3 casts in an array
+    if not self.recent_casts then
+        self.recent_casts = {}
+    end
+
+    -- Create a record with both name and timestamp
+    local cast_record = {
+        name = spell.name,
+        time = current_time
+    }
+
+    -- Insert at the beginning of the array
+    table.insert(self.recent_casts, 1, cast_record)
+
+    -- Keep only the 3 most recent casts
+    if #self.recent_casts > 3 then
+        table.remove(self.recent_casts)
+    end
+
     logger:log("LAST SPELL CAST SET TO: " .. spell.name, 1)
 end
 

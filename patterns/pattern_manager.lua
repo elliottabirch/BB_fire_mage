@@ -96,23 +96,37 @@ end
 function PatternManager:get_pattern_priority(context)
     -- Default priority (can be dynamically adjusted based on context)
     local is_combustion_active = context.combustion_active or false
+    local is_random_combustion = context.is_random_combustion or false
+
 
     if is_combustion_active then
-        return {
-            "combustion_opener",
-            "pyro_fb",
-            "pyro_pf",
-            "scorch_fb_double_pyro_pattern",
-            "scorch_fb"
-        }
+        if is_random_combustion then
+            return {
+                "random_combustion_opener",
+                "pyro_fb",
+                "pyro_pf",
+                "scorch_fb_double_pyro_pattern",
+                "scorch_fb"
+            }
+        else
+            return {
+                "combustion_opener",
+                "pyro_fb",
+                "pyro_pf",
+                "scorch_fb_double_pyro_pattern",
+                "scorch_fb"
+            }
+        end
     else
         return {
             "combustion_opener",
-            "scorch_pattern",
+            -- "scorch_pattern",
             "fireball_hotstreak"
         }
     end
 end
+
+-- end
 
 ---@return string Description of the active pattern and its state
 function PatternManager:get_active_pattern_info()
@@ -165,6 +179,9 @@ function PatternManager:handle_combustion_state_change(player, was_active, is_ac
         -- Reset combustion flag
         if self.patterns["combustion_opener"] then
             self.patterns["combustion_opener"]:reset_combustion_flag()
+        end
+        if self.patterns["random_combustion_opener"] then
+            self.patterns["random_combustion_opener"]:reset_combustion_flag()
         end
     end
 end

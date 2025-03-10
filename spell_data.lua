@@ -74,7 +74,8 @@ local BUFF = {
     HEATING_UP = enums.buff_db.HEATING_UP,
     COMBUSTION = enums.buff_db.COMBUSTION,
     HYPERTHERMIA = enums.buff_db.HYPERTHERMIA,
-    GLORIOUS_INCANDESCENSE = enums.buff_db.GLORIOUS_INCANDESCENSE
+    GLORIOUS_INCANDESCENSE = enums.buff_db.GLORIOUS_INCANDESCENSE,
+    BORN_OF_FLAME = { 1219307 }
 }
 
 -- Create a map of spell IDs to spell objects

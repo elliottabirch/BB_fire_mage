@@ -4,7 +4,7 @@ local spellcasting = require("spellcasting")
 local spell_data = require("spell_data")
 
 ---@class ScorchFireblastDoublePyro : BasePattern
-local ScorchFireblastDoublePyro = BasePattern:new("Scorch+FB+DoublePyro pattern")
+local ScorchFireblastDoublePyro = BasePattern:new("scorch_fb_double_pyro_pattern")
 
 -- Define states
 ScorchFireblastDoublePyro.STATES = {

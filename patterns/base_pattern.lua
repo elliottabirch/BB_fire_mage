@@ -1,5 +1,4 @@
 local spellcasting = require("spellcasting")
-local spell_data = require("spell_data")
 ---@class BasePattern
 ---@field active boolean
 ---@field state string
@@ -8,6 +7,7 @@ local spell_data = require("spell_data")
 ---@field steps table
 ---@field expected_spells table<number, string> Map of step → expected spell ID
 ---@field start_on_gcd boolean
+---@field name string
 
 
 local BasePattern = {

@@ -5,7 +5,7 @@ local spellcasting                   = require("spellcasting")
 local spell_data                     = require("spell_data")
 
 ---@class PyroFireBlastPattern : BasePattern
-local PyroFireBlastPattern           = BasePattern:new("Pyro->FB pattern")
+local PyroFireBlastPattern           = BasePattern:new("pyro_fb")
 
 PyroFireBlastPattern.start_on_gcd    = true
 
@@ -34,12 +34,26 @@ PyroFireBlastPattern.expected_spells = {
 PyroFireBlastPattern.step_logic      = {
     [PyroFireBlastPattern.STATES.NONE] = nil,
     [PyroFireBlastPattern.STATES.FIRE_BLAST] = spell_data.SPELL.FIRE_BLAST,
-    [PyroFireBlastPattern.STATES.HOT_STREAK] = nil,
+    [PyroFireBlastPattern.STATES.HOT_STREAK] = function(player, target)
+        return PyroFireBlastPattern.handle_hot_streak(PyroFireBlastPattern, player,
+            target)
+    end,
     [PyroFireBlastPattern.STATES.PYROBLAST] = spell_data.SPELL.PYROBLAST
 }
 
+---@param player game_object
+---@param target game_object
+function PyroFireBlastPattern:handle_hot_streak(player, target)
+    local has_hot_streak = resources:has_hot_streak(player)
+    if has_hot_streak then
+        self.state = self.STATES.PYROBLAST
+        self.current_step = self.current_step + 1
+    end
+    return true
+end
+
 -- Set initial state
-PyroFireBlastPattern.state           = PyroFireBlastPattern.STATES.NONE
+PyroFireBlastPattern.state = PyroFireBlastPattern.STATES.NONE
 
 ---@param player game_object
 ---@return boolean

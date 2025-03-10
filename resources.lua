@@ -2,10 +2,14 @@
 local Resources = {}
 
 local spell_data = require("spell_data")
+local logger = require("logger")
 local SPELL = spell_data.SPELL
 local BUFF = spell_data.BUFF
 
 local buff_manager = require("common/modules/buff_manager")
+local menu_elements = require("ui/menu_elements")
+local plugin_helper = require("common/utility/plugin_helper")
+local combat_forecast = require("common/modules/combat_forecast")
 
 ---@return number
 function Resources:get_fire_blast_charges()
@@ -68,7 +72,7 @@ end
 
 ---@return number
 function Resources:next_phoenix_flames_charge_ready_in()
-    if self:get_fire_blast_charges() == 2 then
+    if self:get_phoenix_flames_charges() == 2 then
         return 0
     end
 
@@ -133,6 +137,26 @@ function Resources:get_elapsed_cast_time(player)
     local cast_start_time = player:get_active_spell_cast_start_time()
     local current_time = core.game_time()
     return (current_time - cast_start_time)
+end
+
+function Resources:will_use_combustion()
+    if not plugin_helper:is_toggle_enabled(menu_elements.toggle_cooldowns) then
+        logger:log("REJECTED: Cooldowns are disabled via keybind", 2)
+        return false
+    end
+
+    if menu_elements.smart_combustion:get_state() then
+        local combat_length = combat_forecast:get_forecast()
+        if combat_length < 30 then
+            logger:log(
+                "REJECTED: Smart Combustion enabled but fight is not predicted to be long enough: " ..
+                combat_length .. " seconds", 2)
+            return false
+        else
+            logger:log("Smart Combustion: Fight is predicted to be long enough: " .. combat_length .. " seconds", 3)
+        end
+    end
+    return true
 end
 
 return Resources

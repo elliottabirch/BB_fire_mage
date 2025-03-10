@@ -4,7 +4,7 @@ local spell_data = require("spell_data")
 local buff_manager = require("common/modules/buff_manager")
 
 ---@class FireballHotstreakPattern : BasePattern
-local FireballHotstreakPattern = BasePattern:new("Fireball->HotStreak pattern")
+local FireballHotstreakPattern = BasePattern:new("fireball_hotstreak")
 
 FireballHotstreakPattern.start_on_gcd = true
 
@@ -34,10 +34,23 @@ FireballHotstreakPattern.expected_spells = {
 FireballHotstreakPattern.step_logic      = {
     [FireballHotstreakPattern.STATES.NONE] = nil,
     [FireballHotstreakPattern.STATES.FIRE_BLAST] = spell_data.SPELL.FIRE_BLAST,
-    [FireballHotstreakPattern.STATES.HOT_STREAK] = nil,
+    [FireballHotstreakPattern.STATES.HOT_STREAK] = function(player, target)
+        return FireballHotstreakPattern.handle_hot_streak(FireballHotstreakPattern, player,
+            target)
+    end,
     [FireballHotstreakPattern.STATES.PYROBLAST] = spell_data.SPELL.PYROBLAST
 }
 
+---@param player game_object
+---@param target game_object
+function FireballHotstreakPattern:handle_hot_streak(player, target)
+    local has_hot_streak = resources:has_hot_streak(player)
+    if has_hot_streak then
+        self.state = self.STATES.PYROBLAST
+        self.current_step = self.current_step + 1
+    end
+    return true
+end
 
 -- Set initial state
 FireballHotstreakPattern.state = FireballHotstreakPattern.STATES.NONE
@@ -86,7 +99,7 @@ function FireballHotstreakPattern:should_start(player, patterns_active)
     if has_less_than_cap_FB_charges then
         local combustionCD = core.spell_book.get_spell_cooldown(spell_data.SPELL.COMBUSTION.id)
 
-        if combustionCD < 15 then
+        if combustionCD < 15 and resources:will_use_combustion() then
             if not buff_manager:get_buff_data(player, spell_data.BUFF.GLORIOUS_INCANDESCENSE).is_active then
                 self:log(
                     "FAILURE: skipping because our fb charges are low, and we dont have glorious incandescense")

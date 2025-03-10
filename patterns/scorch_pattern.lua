@@ -8,7 +8,7 @@ local buff_manager = require("common/modules/buff_manager")
 
 ---@class ScorchPattern : BasePattern
 ---@field scorch_end_time number The expected end time of the Scorch cast
-local ScorchPattern = BasePattern:new("Scorch Pattern")
+local ScorchPattern = BasePattern:new("scorch_pattern")
 
 ScorchPattern.start_on_gcd = true
 
@@ -51,7 +51,7 @@ function ScorchPattern:handle_fire_blast(player, target)
         return true
     end
     self:log("casting fire blast becauase of heating up or full charges" ..
-        tostring(buff_manager:get_buff_data(player, spell_data.BUFF.GLORIOUS_INCANDESCENSE)) ..
+        tostring(buff_manager:get_buff_data(player, spell_data.BUFF.GLORIOUS_INCANDESCENSE).is_active) ..
         " " .. core.spell_book.get_spell_charge_max(spell_data.SPELL.FIRE_BLAST.id))
 
     spellcasting:cast_spell(spell_data.SPELL.FIRE_BLAST, target, false, false)
